@@ -287,8 +287,8 @@ echo cancellation so the assistant doesn't hear itself (done 2026-11-24).
     speakers: 330 ms with a 100 ms `min_speech` (480 ms with no pause stage).
     PipeWire and the canceller add little.
   - A 200 ms speech fragment paused playback for 380 ms, then it resumed.
-- Not yet tried in a real room (speaker distortion and reverb make cancellation
-  worse than this loopback) or with real music with vocals.
+- Tried in a real room with music playing (2026-11-24): cancellation,
+  interrupting and ducking work; `min_speech_possible` kept at 64 ms.
 
 Local speech means always-on listening costs no network round trips.
 
