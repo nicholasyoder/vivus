@@ -5,7 +5,7 @@
 ```
 ┌──────────────────────────── vivus-daemon (Rust, tokio) ────────────────────────────┐
 │                                                                                      │
-│  Audio in ─► VAD ─► STT (streaming) ─► Router LLM ──┬─► speak()  ─► TTS ─► Audio out │
+│  Audio in ─► VAD ─► STT (streaming) ─► Router LLM ──┬─► content  ─► TTS ─► Audio out │
 │  (PipeWire, echo-cancelled)               │         ├─► show()   ─► sidebar content  │
 │        ▲                                  │         ├─► tool calls (actions)         │
 │        │ interrupt: cancels TTS + LLM     │         └─► escalate() ─► Agent LLM      │

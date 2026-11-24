@@ -1,5 +1,5 @@
-//! Try a provider from the config: streams a reply, offering a `speak` tool and
-//! printing its `text` as it arrives.
+//! Try a provider from the config the way the router uses it: content is
+//! speech, longer material goes through a `show` tool.
 //!
 //!     cargo run -p vivus-inference --example chat -- [--role answer] What time zone is Tokyo in?
 
@@ -8,8 +8,11 @@ use std::io::Write;
 use anyhow::{Context, bail};
 use serde_json::json;
 use vivus_core::Config;
-use vivus_inference::partial::StringField;
 use vivus_inference::{ChatRequest, Client, Event, Message, Tool};
+
+const SYSTEM: &str = "You are a voice assistant. Your text reply is spoken aloud: \
+one or two short sentences, no lists, URLs or code. Put anything longer in the \
+sidebar with the `show` tool and say a one-sentence summary.";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -35,50 +38,37 @@ async fn main() -> anyhow::Result<()> {
 
     let mut req = ChatRequest::new(
         model,
-        vec![
-            Message::System("You are a voice assistant. Answer by calling `speak` with one or two short sentences.".into()),
-            Message::User(args.join(" ")),
-        ],
+        vec![Message::System(SYSTEM.into()), Message::User(args.join(" "))],
     );
     req.tools.push(Tool {
-        name: "speak".into(),
-        description: "Say something aloud to the user.".into(),
-        parameters: json!({"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}),
+        name: "show".into(),
+        description: "Show a markdown document in the sidebar.".into(),
+        parameters: json!({"type": "object", "properties": {"markdown": {"type": "string"}}, "required": ["markdown"]}),
     });
 
     let start = std::time::Instant::now();
     let mut first = None;
     let mut first_spoken = None;
     let mut arg_chunks = 0;
-    let mut speak: Option<(usize, StringField)> = None;
     let mut stream = client.chat(&req).await?;
     let mut out = std::io::stdout();
+    print!("[spoken] ");
     while let Some(ev) = stream.next().await {
         first.get_or_insert_with(|| start.elapsed());
         match ev? {
-            Event::Text(t) => print!("{t}"),
-            Event::Reasoning(_) => {}
-            Event::ToolCallStart { index, name, .. } => {
-                print!("\n[{name}] ");
-                if name == "speak" {
-                    speak = Some((index, StringField::new("text")));
-                }
+            Event::Text(t) => {
+                first_spoken.get_or_insert_with(|| start.elapsed());
+                print!("{t}");
             }
-            Event::ToolCallArgs { index, delta } => {
+            Event::Reasoning(_) => {}
+            Event::ToolCallStart { name, .. } => print!("\n[{name}] "),
+            Event::ToolCallArgs { delta, .. } => {
                 arg_chunks += 1;
-                match &mut speak {
-                    Some((i, f)) if *i == index => {
-                        if let Some(t) = f.push(&delta) {
-                            first_spoken.get_or_insert_with(|| start.elapsed());
-                            print!("{t}");
-                        }
-                    }
-                    _ => print!("{delta}"),
-                }
+                print!("{delta}");
             }
             Event::Done(reply) => {
                 println!(
-                    "\n\n-- first event {:?}, first spoken text {:?}, total {:?}, {arg_chunks} argument chunks, finish {:?}, usage {:?}",
+                    "\n\n-- first event {:?}, first spoken text {:?}, total {:?}, {arg_chunks} tool-argument chunks, finish {:?}, usage {:?}",
                     first.unwrap_or_default(),
                     first_spoken,
                     start.elapsed(),

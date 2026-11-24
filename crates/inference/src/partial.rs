@@ -1,5 +1,6 @@
 //! Reading a string field out of tool-call arguments while they are still
-//! streaming, so `speak`'s `text` can reach TTS before the call is complete.
+//! streaming. Groq and nano-gpt send arguments whole, so this only helps with
+//! providers that stream them.
 
 /// Accumulates argument deltas and yields newly available text of one
 /// top-level string field.

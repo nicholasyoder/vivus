@@ -37,8 +37,8 @@ SDK types reject the quirks below, and we need raw tool-argument deltas.
 - Cancelling is dropping the stream: the connection closes and the provider
   stops generating.
 - `partial::StringField` decodes a string field from tool arguments while they
-  stream (escapes split across chunks are held back), so `speak`'s `text` can
-  go to TTS sentence by sentence.
+  stream (escapes split across chunks are held back). The providers tested
+  don't stream arguments, so it's for those that do (e.g. a long `show`).
 - Tolerated quirks: SSE comments and CRLF, no `[DONE]`, usage-only final chunk,
   a JSON body despite `stream: true`, `error` objects mid-stream, tool calls
   without `index` or reusing one index with new ids, `id`/`name` repeated per
@@ -47,12 +47,13 @@ SDK types reject the quirks below, and we need raw tool-argument deltas.
 - Timeouts: 10 s connect, 60 s between reads, no total limit.
 
 Try a configured role: `cargo run -p vivus-inference --example chat -- [--role answer] <prompt>`
-(keys in the environment or `~/.config/vivus/.env`). It prints time to first
-event, to first spoken text, and the number of argument chunks.
+(keys in the environment or `~/.config/vivus/.env`). Content is printed as
+speech, with a `show` tool offered; it prints time to first event, to first
+spoken text, and the number of tool-argument chunks.
 
 ### Smoke test (2026-11-23)
 
-Asked to answer through a `speak` tool:
+Asked to answer through a `speak(text)` tool (the design at the time):
 
 | Provider | Model | First event | First `speak` text | Total |
 |---|---|---|---|---|
@@ -63,7 +64,7 @@ Asked to answer through a `speak` tool:
   through on both.
 - **Neither streams tool arguments**: the whole call arrives in one chunk at the
   end (also `openai/gpt-5.4-mini` via nano-gpt). Plain `content` does stream on
-  both. So `speak` as a tool can't start TTS early; see [Routing](#routing).
+  both. So speech goes in content, not a `speak` tool; see [Routing](#routing).
 - Groq omits `index` on tool-call deltas (handled) and sends gpt-oss reasoning
   as `reasoning` with a `channel` field.
 - nano-gpt's first token takes ~2 s even for plain text: fine for `answer`,
@@ -74,11 +75,15 @@ Asked to answer through a `speak` tool:
 ## Routing
 
 One model call with tools, not a separate classifier. The router gets the
-transcript plus context in one streaming call, with tools:
+transcript plus context in one streaming call.
 
-- `speak(text)`: what to say aloud. One or two sentences at most; no lists, URLs or code.
+**The reply's text content is what gets spoken**, one or two sentences at most,
+no lists, URLs or code. It streams into TTS one sentence at a time. Speech is
+not a tool because providers send tool arguments in one final chunk
+([smoke test](#smoke-test-2026-11-23)). Tools:
+
 - `show(document)`: put markdown in the sidebar (new document, or append/replace an existing one).
-- `escalate(role, task)`: hand the request to `answer` or `agent`. The router also calls `speak` with a short filler line ("let me pull that up") so there's immediate audio.
+- `escalate(role, task)`: hand the request to `answer` or `agent`. The router first writes a short filler line ("let me pull that up") as content, so there's immediate audio; models put content before tool calls.
 - Action tools: `launch_app`, `focus_window`, `close_window`, `web_search`, `fetch_url`, `get_clipboard`, `set_clipboard`, `get_time`, ...
 
 Speech/sidebar rules (system prompt and examples):
@@ -88,11 +93,15 @@ Speech/sidebar rules (system prompt and examples):
 - Never read code, URLs or long numbers aloud.
 - When escalating: filler line immediately; when the result arrives, a spoken summary and the full detail in the sidebar.
 
-The text from `speak` goes to TTS one sentence at a time while it's still being
-generated. But the providers tested buffer tool arguments until the call is
-complete ([smoke test](#smoke-test-2026-11-23)), so streaming only works if the
-spoken reply is plain `content` and the tools are for `show`, `escalate` and
-actions. Still open; see the roadmap.
+After action tools run, their results go back in a follow-up call, and that
+call's content is spoken too ("Opened Firefox"). If a model puts sidebar-style
+material (lists, code) in content anyway, the prompt and examples are the fix;
+TTS normalization drops what it can't say.
+
+In the example run (2026-11-23), both gpt-oss-20b and DeepSeek called `show`
+for a packing list **with no spoken content**, despite the prompt asking for a
+summary. The router needs a fallback: send the `show` result back and speak the
+follow-up's content, or say a canned line ("I've put that in the sidebar").
 
 ## Web access
 
