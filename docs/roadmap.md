@@ -6,7 +6,7 @@ Goal: talk to your Linux desktop like a capable person next to you. See
 **How to use this file.** Each unchecked item is sized for roughly one working
 session. Pick the first unchecked item in the current phase (unless there's a
 reason to jump), do it, then check it off with the date and commit in the same
-commit as the work. Design detail belongs in the linked topic docs, not here.
+commit as the work. Checked items stay where they are. Design detail belongs in the linked topic docs, not here.
 New work discovered along the way gets a new line item.
 
 ## Phase 1: Voice loop and sidebar ← current
@@ -14,14 +14,14 @@ New work discovered along the way gets a new line item.
 Talking to the computer works smoothly for questions and basic app control,
 using only standard protocols.
 
-### Done
+### Foundation
 
 - [x] Project skeleton: Cargo workspace, D-Bus contract, `vivusctl`, Widgets sidebar (2026-11-20, `5bc6738`)
-- [x] Voice input: PipeWire capture, Silero VAD, local streaming STT, live transcript in the sidebar (2026-11-23, `ffd138c`) — [speech.md](speech.md)
-- [x] Local TTS (Kitten / Kokoro via sherpa-onnx) with PipeWire playback, fed one sentence at a time; `speaking` state (2026-11-23, `3d66e65`) — [speech.md](speech.md#tts)
 
 ### Voice
 
+- [x] Voice input: PipeWire capture, Silero VAD, local streaming STT, live transcript in the sidebar (2026-11-23, `ffd138c`) — [speech.md](speech.md)
+- [x] Local TTS (Kitten / Kokoro via sherpa-onnx) with PipeWire playback, fed one sentence at a time; `speaking` state (2026-11-23, `3d66e65`) — [speech.md](speech.md#tts)
 - [ ] TTS fallback for out-of-lexicon words (dropped silently today): neural G2P and/or a user lexicon — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] Echo cancellation (set up or auto-load PipeWire `module-echo-cancel`) and barge-in: speech during playback cancels TTS and LLM within ~200 ms — [speech.md](speech.md#barge-in)
 - [ ] Semantic end-of-turn check on partials, so the silence threshold can shrink; start the router speculatively — [speech.md](speech.md#turn-detection)
