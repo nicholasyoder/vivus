@@ -32,8 +32,8 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] LLM pronunciation lookup for OOV words, started while the reply streams; cached in the learned lexicon; idle prefetch of app names and transcripts (2026-11-24, `aeae4c1`) — [speech.md](speech.md#out-of-lexicon-words)
 - [x] Echo cancellation (auto-loaded PipeWire `module-echo-cancel`, monitor mode so music is cancelled too) and barge-in: possible speech pauses TTS, confirmed speech cancels TTS and LLM (2026-11-24, `4ac2343`) — [speech.md](speech.md#barge-in)
 - [ ] Try echo cancellation and barge-in in a real room, with music; tune `min_speech_possible` — [speech.md](speech.md#barge-in)
-- [x] Capture downmixes all channels (a stereo mic currently links only `FL`) (2026-11-24, `HASH`)
-- [x] Speech on both speakers (`MONO` channel position), louder TTS (levelled to ~-16 LUFS), other apps ducked while speaking (2026-11-24, `HASH`) — [speech.md](speech.md#tts)
+- [x] Capture downmixes all channels (a stereo mic currently links only `FL`) (2026-11-24, `e85b370`)
+- [x] Speech on both speakers (`MONO` channel position), louder TTS (levelled to ~-16 LUFS), other apps ducked while speaking (2026-11-24, `e85b370`) — [speech.md](speech.md#tts)
 
 ### 1c: Basic desktop control
 
