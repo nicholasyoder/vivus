@@ -35,7 +35,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] Capture downmixes all channels (a stereo mic currently links only `FL`) (2026-11-24, `e85b370`)
 - [x] Speech on both speakers (`MONO` channel position), louder TTS (levelled to ~-16 LUFS), other apps ducked while speaking (2026-11-24, `e85b370`) — [speech.md](speech.md#tts)
 - [x] STT fixes from real use: streaming edge padding, `parakeet-tdt-0.6b` as standard tier, one-word barge-in (2026-11-24, `e5bdfa3`, `65c1a75`, `492159f`) — [speech.md](speech.md#tiers)
-- [x] `[audio] record_utterances`: save each utterance as heard, with its transcript (2026-11-24, `HASH`) — [speech.md](speech.md#recording-utterances)
+- [x] `[audio] record_utterances`: save each utterance as heard, with its transcript (2026-11-24, `4189315`) — [speech.md](speech.md#recording-utterances)
 - [ ] STT accuracy on real speech: compare echo-canceller settings and models (Whisper, Qwen3-ASR) on recorded utterances; remote STT if local isn't enough — [speech.md](speech.md#recording-utterances)
 
 ### 1c: Basic desktop control
