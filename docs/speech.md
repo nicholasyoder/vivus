@@ -89,17 +89,16 @@ shrink, and lets the router start speculatively before you've definitely finishe
   `leo`). Unset `tts` means `kitten-nano`. The daemon synthesizes a short
   warm-up phrase at load because the first inference is several times slower.
 - **No espeak-ng**: sherpa-onnx 2.x dropped it (GPL), so models need a lexicon.
-  Kokoro's archive ships `lexicon-us-en.txt`/`lexicon-gb-en.txt`; we pass both,
-  the voice's own first (sherpa takes a comma-separated list, first entry wins),
-  because the US one lacks many plurals ("minutes", "degrees", "dogs"). Kitten's
-  archive has none; it uses the shared espeak-IPA `lexicon-en-us.txt` from the
-  `tts-models` release, stored in the models dir, after our small
-  `crates/speech/data/extra-kitten.txt` (it lacks "or" and "her"!), which is
-  copied beside it at load. Loading costs ~30 ms (Kitten) and ~500 ms (Kokoro).
-  **Out-of-lexicon words are dropped silently** (sherpa logs "OOV word
-  skipped"): "Open Hyprland and zorbleflax the Kubernetes pods." is spoken as
-  "Open and the pods." with both models. See
-  [Out-of-lexicon words](#out-of-lexicon-words).
+  We phonemize ourselves ([Out-of-lexicon words](#out-of-lexicon-words), layer
+  2) and hand sherpa `phoneme_codepoints`, so sherpa loads no lexicon. Kokoro's
+  archive ships `lexicon-us-en.txt`/`lexicon-gb-en.txt`; we load both, the
+  voice's own first, because the US one lacks many plurals ("minutes",
+  "degrees", "dogs"). Kitten's archive has none; it uses the shared espeak-IPA
+  `lexicon-en-us.txt` from the `tts-models` release, stored in the models dir.
+  Note that sherpa's own loader lets the *last* comma-separated file win, so
+  before this, US voices got the British entry for every word both lexicons
+  have. Model load is ~360 ms (Kitten) and ~820 ms (Kokoro), half what it was
+  when sherpa parsed the lexicons too.
 - **Sentence splitting** (`SentenceSplitter`): streamed deltas in, complete
   sentences out. Splits on `.!?…` followed by whitespace, and on newlines; skips
   abbreviations and initials; past 120 bytes it splits at a clause boundary so a
@@ -138,26 +137,63 @@ Plan, in layers:
    `etc.`). Then two lexicon-aware passes: all-caps words of 2–6 letters are
    spelled as letters unless the lexicon knows them (`US`, `IT`, `OS`, … are
    always spelled), and unknown words are respelled: contractions expanded
-   (`that's` → "that is", `should've` → "should have"), possessives of known
-   words lose the `'s` (`NVIDIA's` → "NVIDIA"), camelCase and two-word
+   (`should've` → "should have"; `'s` is left to the phonemizer's suffix
+   rules), camelCase and two-word
    compounds split (`GitHub` → "Git Hub", `Firefox` → "Fire fox"), metric
    prefixes split (`kilometers` → "kilo meters"). Whatever is still unknown is
-   logged at info (`tts: not in lexicon, skipped: …`); `tts_bench` prints it per
-   sentence. Our check matches sherpa's own OOV log on the test sentences.
+   logged at info (`tts: no pronunciation, skipped: …`); `tts_bench` prints it
+   per sentence.
    On a ~25-sentence sweep of typical replies, what's left is names
    (`Hyprland`, `Kubernetes`, `nginx`, `Spotify`, `LibreOffice`) and, for
    Kokoro, inflected forms neither of its lexicons has (`opens`,
    `notifications`, `compositors`): the phonemizer needs `-s`/`-ed`/`-ing`
    suffix rules.
-2. **Own phonemizer.** `phoneme_codepoints` replaces the whole sentence's input,
-   so per-word fixes mean phonemizing ourselves: load the lexicon in Rust, look
-   up each word, emit codepoints (punctuation and pauses included). This also
-   detects OOV words *before* synthesis, so nothing is dropped and re-said.
-   Pronunciations are stored as ARPAbet with stress (`HYPRLAND HH AY1 P ER0 L AE2
-   N D`): LLMs produce it reliably, it validates against a small symbol set, and
-   the ARPAbet → espeak-IPA (Kitten) and → misaki (Kokoro) tables can be learned
-   from words both lexicons share. One file of learned entries plus user
-   entries, which win.
+2. **Own phonemizer** (done 2026-11-24, `crates/speech/src/lexicon.rs`,
+   `arpabet.rs`). `phoneme_codepoints` replaces the whole sentence's input, so
+   per-word fixes mean phonemizing ourselves. `Lexicon::phonemize` tokenizes
+   like sherpa's lexicon frontend (one space between words, `,.;:!?—…` and
+   brackets/quotes kept as tokens), tries multi-word keys first (the espeak
+   lexicon has homograph phrases like "the record"), then the word, then
+   hyphen parts. Unknown words are reported in `missing` *before* synthesis.
+   Codepoints the model's `tokens.txt` lacks are filtered out.
+   - **Sources**, first one wins: user pronunciations
+     (`~/.config/vivus/pronunciations.txt`), learned ones
+     (`~/.local/share/vivus/pronunciations.txt`, for the LLM lookup), the
+     model's lexicon files, then `crates/speech/data/pronunciations.txt`
+     (built-in gap fillers: "or", "her" for Kitten). Pronunciation files are
+     CMUdict-format ARPAbet (`HYPRLAND  HH AY1 P ER0 L AE2 N D`, `#`
+     comments); bad lines are logged and skipped.
+   - **Suffix rules** for a word with no entry: `-s`/`-es`/`-ies`, `'s`,
+     `-ed`/`-ied` (incl. "used" → use, "stopped" → stop), `-ing` ("making" →
+     make, "being" → be, "running" → run). The ending follows the base's last
+     phoneme (s/z/ᵻz, t/d/ᵻd; GB `ɪ`), and American sets flap a final t
+     ("getting" ɡˈɛɾɪŋ). Words ending in `ss`/`us` don't take `-s`.
+   - **Articles**: "the" is ði before a vowel, ðə otherwise; "a" is ɐ, except
+     a capital A next to a single letter or at the end ("A P I", "plan A").
+     Every lexicon has "a" as the letter name, and Kokoro's US "the" is always ði.
+   - **ARPAbet tables** (`arpabet.rs`) to espeak IPA, misaki US and misaki GB
+     (misaki writes diphthongs as letters: `A` eɪ, `I` aɪ, `O` oʊ, `Q` əʊ, `W`
+     aʊ, `Y` ɔɪ). Stress goes right before the vowel, as in both lexicons.
+     Rules that measurably helped: US flap (`T` after a vowel or `R`, before an
+     unstressed vowel), GB non-rhotic `R` and `ɒ` for `AA`, espeak `ɐ` for a
+     word-initial `AH0`, `oː` before `R` and `ɚɹ` before a vowel, `ᵻ`/`ɪ` in
+     final `-ted`/`-ded`, and secondary stress marked only for misaki US.
+     Checked against CMUdict's first pronunciation of every word it shares with
+     each lexicon:
+
+     | Set | Shared words | Exact | Same but stress | Char similarity |
+     |---|---|---|---|---|
+     | espeak (Kitten) | 117k | 45% | 6% | 88% |
+     | misaki US | 49k | 62% | 7% | 94% |
+     | misaki GB | 50k | 49% | 5% | 92% |
+
+     Most of the rest are real dictionary disagreements (names, reduced vowels
+     `ə`/`ɪ`/`ᵻ`/`ᵊ`, which syllable gets secondary stress), not table errors.
+     A syllabic `ᵊn`/`ᵊl` rule for misaki made it worse.
+   - Checked by ear via STT: three sentences with contractions, a possessive,
+     plurals, `-ed` and `-ing` forms round-trip through parakeet word for word
+     with Kitten, Kokoro US and GB. User entries for "Hyprland", "Kubernetes",
+     "nginx" come back as "Hyperland", "Kubernetes", "Engine X".
 3. **LLM lookup.** Scan the reply as it streams and request pronunciations for
    OOV words immediately (fast model, batched), so they're usually back before
    their sentence is synthesized; later sentences have the previous sentence's

@@ -59,6 +59,7 @@ impl Speaker {
             voice.as_deref(),
             &tts::Options {
                 num_threads: threads,
+                pronunciations: vivus_speech::default_pronunciation_files(),
                 ..Default::default()
             },
         )?;

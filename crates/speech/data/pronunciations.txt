@@ -1,0 +1,5 @@
+# Built-in pronunciations (ARPAbet, CMUdict format) for common words some model
+# lexicons lack. Model lexicons, learned and user entries all win over these.
+OR  AO1 R
+HER  HH ER1
+GIGAHERTZ  G IH1 G AH0 HH ER2 T S

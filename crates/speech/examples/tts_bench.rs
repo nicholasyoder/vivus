@@ -23,6 +23,7 @@ fn main() {
 
     let opts = tts::Options {
         num_threads: threads,
+        pronunciations: vivus_speech::default_pronunciation_files(),
         ..Default::default()
     };
     let t = Instant::now();
@@ -48,9 +49,10 @@ fn main() {
         let e = t.elapsed();
         let spoken = synth.normalize(s);
         println!("  {:>5.0} ms for {:.1}s: {spoken}", e.as_secs_f64() * 1e3, samples.len() as f32 / rate as f32);
-        let missing = synth.missing_words(&spoken);
-        if !missing.is_empty() {
-            println!("           not in lexicon: {}", missing.join(", "));
+        let ph = synth.phonemize(&spoken);
+        println!("           /{}/", ph.phonemes);
+        if !ph.missing.is_empty() {
+            println!("           no pronunciation: {}", ph.missing.join(", "));
         }
         audio.extend(samples);
         compute += e;

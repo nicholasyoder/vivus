@@ -33,17 +33,26 @@ fn voices_resolve() {
     assert!(matches!(s, Err(Error::UnknownVoice(..))));
 }
 
-/// Typical reply text loses no words with either model (sherpa drops unknown ones).
+/// Typical reply text loses no words with any model or lexicon order.
 #[test]
 fn normalized_text_is_in_lexicon() {
     let text = "It is 3:45 PM on Nov 23, 2026. Your GPU uses 12.5 GB, about 40% of the RAM. \
         Tell her it's 21°C or 70°F, wind 15 km/h, and that's $5.99. What's next? \
         Dr. Smith emailed you about the API at vivus.org.";
-    for model in vivus_speech::models::TTS_MODELS {
-        let Some(s) = synth(model.name, None) else { continue };
+    for (model, voice) in [("kitten-nano", None), ("kokoro", None), ("kokoro", Some("bm_george"))] {
+        let Some(s) = synth(model, voice) else { continue };
         let s = s.unwrap();
         let spoken = s.normalize(text);
-        let missing = s.missing_words(&spoken);
-        assert_eq!(missing, ["vivus"], "{}: {spoken}", model.name);
+        let missing = s.phonemize(&spoken).missing;
+        assert_eq!(missing, ["vivus"], "{model}: {spoken}");
     }
+}
+
+/// Inflections neither Kokoro lexicon has come from suffix rules.
+#[test]
+fn suffix_rules_fill_gaps() {
+    let Some(s) = synth("kokoro", None) else { return };
+    let s = s.unwrap();
+    let ph = s.phonemize("It opens notifications for the compositors.");
+    assert!(ph.missing.is_empty(), "{:?}", ph.missing);
 }

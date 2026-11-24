@@ -1,6 +1,7 @@
 //! Local speech models via sherpa-onnx: VAD, STT and TTS.
 //! Everything here is blocking CPU work; run it on a dedicated thread.
 
+pub mod arpabet;
 pub mod lexicon;
 pub mod listener;
 pub mod models;
@@ -9,7 +10,8 @@ pub mod sentences;
 pub mod stt;
 pub mod tts;
 
-pub use lexicon::Lexicon;
+pub use arpabet::PhoneSet;
+pub use lexicon::{Lexicon, Phonemized, default_pronunciation_files};
 pub use listener::{Event, Listener, Mode, VadOptions};
 pub use models::{SttKind, SttModel, TtsKind, TtsModel, default_models_dir};
 pub use sentences::SentenceSplitter;

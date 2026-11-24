@@ -346,14 +346,8 @@ const PREFIXES: &[(&str, &[&str])] = &[
     ("tera", &["tera", "terra"]),
 ];
 
-/// `'s` after these is "is"; after anything else it's a possessive.
-const IS_CONTRACTIONS: &[&str] = &[
-    "what", "that", "here", "how", "where", "when", "why", "who", "there", "it", "he", "she",
-    "everyone", "everything", "something", "nothing", "someone", "this",
-];
-
-/// Lexicon-aware fixes for words the model would drop: contractions and
-/// possessives of known words, camelCase, metric prefixes ("kilometers" →
+/// Lexicon-aware fixes for words the model would drop: contractions of known
+/// words (`'s` is left to the phonemizer's suffix rules), camelCase, metric prefixes ("kilometers" →
 /// "kilo meters"). A word that stays unknown is left for the log.
 fn respell(text: &str, lexicon: &Lexicon) -> String {
     static WORD: LazyLock<Regex> = LazyLock::new(|| re(r"\b[A-Za-z]+(?:'[A-Za-z]+)?\b"));
@@ -372,7 +366,6 @@ fn respell(text: &str, lexicon: &Lexicon) -> String {
             let lower = base.to_lowercase();
             let wh = matches!(lower.as_str(), "what" | "how" | "where" | "why" | "when");
             let full = match suffix.to_lowercase().as_str() {
-                "s" if IS_CONTRACTIONS.contains(&lower.as_str()) => "is",
                 "ll" => "will",
                 "d" if wh => "did",
                 "d" => "would",
@@ -722,15 +715,15 @@ mod tests {
         let lex = Lexicon::from_words([
             "kilo", "meters", "milly", "seconds", "terabytes", "five", "three", "two", "and",
             "what", "that", "today", "weather", "should", "git", "hub", "on", "nvidia", "is",
-            "fire", "fox", "uses",
+            "fire", "fox", "uses", "we", "go",
         ]);
         assert_eq!(
             normalize("5 km and 3 ms, 2 TB", &lex),
             "five kilo meters and three milly seconds, two terabytes"
         );
         assert_eq!(
-            normalize("What's that? Today's weather. Should've. NVIDIA's GitHub is on.", &lex),
-            "What is that? Today weather. Should have. NVIDIA Git Hub is on."
+            normalize("What's that? Today's weather. Should've. We'd go. GitHub is on.", &lex),
+            "What's that? Today's weather. Should have. We would go. Git Hub is on."
         );
         assert_eq!(normalize("Firefox uses", &lex), "Fire fox uses");
     }
