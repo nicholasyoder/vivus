@@ -20,7 +20,7 @@ using only standard protocols.
 
 ### Inference
 
-- [x] `vivus-inference`: OpenAI-compatible streaming chat client with tool calls (2026-11-23, `HASH`) — [inference.md](inference.md)
+- [x] `vivus-inference`: OpenAI-compatible streaming chat client with tool calls (2026-11-23, `696b45d`) — [inference.md](inference.md)
 - [ ] Smoke-test the client against Groq and nano-gpt with real keys (`--example chat`) — [inference.md](inference.md#client-cratesinference)
 - [ ] Router: one streaming call with `speak` / `show` / `escalate` tools and the speech-vs-sidebar rules (numbers as words until normalization lands); `speak` streams into TTS — [inference.md](inference.md#routing)
 - [ ] Escalation to `answer` and `agent`, including the Claude Code provider — [inference.md](inference.md#roles)
