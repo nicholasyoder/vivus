@@ -194,14 +194,30 @@ Plan, in layers:
      plurals, `-ed` and `-ing` forms round-trip through parakeet word for word
      with Kitten, Kokoro US and GB. User entries for "Hyprland", "Kubernetes",
      "nginx" come back as "Hyperland", "Kubernetes", "Engine X".
-3. **LLM lookup.** Scan the reply as it streams and request pronunciations for
-   OOV words immediately (fast model, batched), so they're usually back before
-   their sentence is synthesized; later sentences have the previous sentence's
-   playback as slack. A first sentence may wait a few seconds for a lookup
-   rather than speak a word wrong. Results are cached forever, and at idle we
-   prefetch app names (`.desktop`), window titles and words from transcripts.
-   LLMs know real-world pronunciations ("nginx", "Kubernetes") that spelling
-   rules miss.
+3. **LLM lookup** (done 2026-11-24, `crates/daemon/src/pronounce.rs`). The
+   speaker splits the reply into sentences as it streams (on the engine side,
+   not the TTS thread), and each complete sentence's missing words go to the
+   router's model at once, one request per sentence, concurrently. The TTS
+   thread waits for a sentence's pending words up to 3 s, so the first sentence
+   pays for the lookup and later ones mostly wait during playback. The prompt
+   asks for CMUdict ARPAbet as a JSON object; answers are validated by the
+   ARPAbet parser, added to the shared lexicon and appended to the learned file
+   (uppercase, CMUdict style). Possessives are looked up by their base, hyphen
+   parts separately, words with digits not at all; a word is tried once per
+   session. `reasoning_effort = "low"` keeps gpt-oss from spending its 1000
+   tokens thinking (it hit the limit otherwise); a provider that rejects it with
+   a 400 is retried without, and not sent it again.
+   - **Prefetch** (background, 25 words per request, 10 s apart): `Name=` of
+     installed `.desktop` files at startup, and each final user transcript.
+     A reply needing a prefetched word promotes it. Window titles come with
+     window listing.
+   - **Measured** (Groq `openai/gpt-oss-120b`): 3 words in 0.5–0.6 s, 7 in
+     ~2 s, 25 app names in 1.7 s. In a daemon run, "Hyprland and Zellij run fine
+     with Ghostty." waited 580 ms before synthesis; through parakeet it comes
+     back as "Hyperland and Zelie run fine with Ghosty" (Kokoro and Kitten).
+     The model is good on well-known names and weak on compounds it can't
+     place (`LibreOffice` → `L IH1 B R IY0 OW0 F IH2 S`); a user entry fixes
+     those.
 4. **Local neural G2P** (small CMUdict-trained ARPAbet model) when offline or
    past the deadline; a later LLM answer replaces its guess in the cache.
 

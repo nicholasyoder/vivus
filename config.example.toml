@@ -43,6 +43,8 @@ provider = "local-speech"
 model = "kokoro"
 voice = "af_heart"
 
+# The router's model also looks up pronunciations for words the TTS lexicon
+# lacks; answers are cached in ~/.local/share/vivus/pronunciations.txt.
 [roles.router]
 provider = "groq"
 model = "<fast-model>"

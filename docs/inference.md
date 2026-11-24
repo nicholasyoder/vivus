@@ -45,6 +45,9 @@ SDK types reject the quirks below, and we need raw tool-argument deltas.
   chunk, arguments as an object instead of a string, empty arguments,
   `reasoning` / `reasoning_content`.
 - Timeouts: 10 s connect, 60 s between reads, no total limit.
+- `ChatRequest::reasoning_effort` is sent only when set. Pronunciation lookups
+  set `low`, since gpt-oss otherwise spends its whole `max_tokens` budget
+  reasoning about ARPAbet ([speech.md](speech.md#out-of-lexicon-words)).
 
 Try a configured role: `cargo run -p vivus-inference --example chat -- [--role answer] <prompt>`
 (keys in the environment or `~/.config/vivus/.env`). Content is printed as

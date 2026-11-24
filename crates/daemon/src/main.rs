@@ -1,4 +1,5 @@
 mod engine;
+mod pronounce;
 mod router;
 mod service;
 mod speaker;
@@ -49,8 +50,9 @@ async fn main() -> anyhow::Result<()> {
     });
     let speaker_config = config.clone();
     let speaker_tx = tx.clone();
+    let rt = tokio::runtime::Handle::current();
     tokio::task::spawn_blocking(move || {
-        let speaker = speaker::Speaker::new(&speaker_config, speaker_tx.clone());
+        let speaker = speaker::Speaker::new(&speaker_config, speaker_tx.clone(), &rt);
         let _ = speaker_tx.send(Command::SpeakerReady(Box::new(speaker)));
     });
 

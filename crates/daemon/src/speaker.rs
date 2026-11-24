@@ -1,26 +1,30 @@
-//! TTS worker thread plus playback. Text arrives as streamed deltas, is split
-//! into sentences and synthesized one at a time, so audio starts after the first.
+//! TTS worker thread plus playback. Text arrives as streamed deltas and is
+//! split into sentences here, so words the lexicon lacks can be looked up
+//! before the `vivus-tts` thread synthesizes their sentence.
 
 use std::sync::{Arc, Mutex, mpsc};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
+use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedSender;
 use vivus_audio::{Playback, PlaybackOptions, PlaybackSender};
 use vivus_core::Config;
-use vivus_speech::{SentenceSplitter, Synthesizer, tts};
+use vivus_speech::{SentenceSplitter, SharedLexicon, Synthesizer, missing_words, tts};
 
 use crate::engine::Command;
+use crate::pronounce::{self, Pronouncer};
 use crate::voice::{LocalSpeech, resolve_local};
 
 const DEFAULT_TTS_MODEL: &str = "kitten-nano";
+/// How long a sentence may wait for pronunciation lookups. Later sentences
+/// usually wait during the previous one's playback, so only the first is felt.
+const LOOKUP_WAIT: Duration = Duration::from_secs(3);
 
 /// Every message carries the reply generation it belongs to; `stop()` bumps
 /// the generation so queued and in-flight work for the old reply is dropped.
 enum Msg {
-    Text(u64, String),
-    /// Speak the buffered partial sentence without ending the reply.
-    Flush(u64),
+    Sentence(u64, String),
     End(u64),
 }
 
@@ -30,6 +34,9 @@ pub struct Speaker {
     /// Held while checking the generation and queueing audio, so a `stop()`
     /// can't slip between the check and the send.
     generation: Arc<Mutex<u64>>,
+    splitter: Mutex<SentenceSplitter>,
+    lexicon: SharedLexicon,
+    pronouncer: Option<Pronouncer>,
 }
 
 impl std::fmt::Debug for Speaker {
@@ -40,7 +47,11 @@ impl std::fmt::Debug for Speaker {
 
 impl Speaker {
     /// Loads the model (slow: run off the async runtime).
-    pub fn new(config: &Config, events: UnboundedSender<Command>) -> anyhow::Result<Self> {
+    pub fn new(
+        config: &Config,
+        events: UnboundedSender<Command>,
+        rt: &Handle,
+    ) -> anyhow::Result<Self> {
         let LocalSpeech {
             models_dir,
             threads,
@@ -65,6 +76,12 @@ impl Speaker {
         )?;
         // The first inference is several times slower; pay for it now.
         synth.synthesize("Ready.");
+        let lexicon = synth.lexicon();
+        let pronouncer = Pronouncer::from_config(config, lexicon.clone(), rt);
+        if let Some(p) = &pronouncer {
+            let names = pronounce::app_names().join(". ");
+            p.request(&missing_words(&lexicon.read().unwrap(), &names), false);
+        }
 
         let playback = Playback::spawn(
             PlaybackOptions {
@@ -82,8 +99,7 @@ impl Speaker {
             synth,
             playback: playback.sender(),
             generation: generation.clone(),
-            splitter: SentenceSplitter::new(),
-            current: 0,
+            pronouncer: pronouncer.clone(),
         };
         std::thread::Builder::new()
             .name("vivus-tts".into())
@@ -94,21 +110,31 @@ impl Speaker {
             tx,
             playback,
             generation,
+            splitter: Mutex::new(SentenceSplitter::new()),
+            lexicon,
+            pronouncer,
         })
     }
 
     /// Append text to the current reply.
     pub fn say(&self, text: &str) {
-        let _ = self.tx.send(Msg::Text(*self.generation.lock().unwrap(), text.into()));
+        let sentences = self.splitter.lock().unwrap().push(text);
+        for sentence in sentences {
+            self.queue(sentence);
+        }
     }
 
     /// Speak what's buffered now; more text may follow later.
     pub fn flush(&self) {
-        let _ = self.tx.send(Msg::Flush(*self.generation.lock().unwrap()));
+        let sentence = self.splitter.lock().unwrap().finish();
+        if let Some(sentence) = sentence {
+            self.queue(sentence);
+        }
     }
 
     /// The reply is complete; `SpeakingFinished` follows once it has played.
     pub fn end(&self) {
+        self.flush();
         let _ = self.tx.send(Msg::End(*self.generation.lock().unwrap()));
     }
 
@@ -116,7 +142,27 @@ impl Speaker {
     pub fn stop(&self) {
         let mut generation = self.generation.lock().unwrap();
         *generation += 1;
+        self.splitter.lock().unwrap().clear();
         self.playback.stop();
+    }
+
+    /// Looks up unknown words in `text` in the background (e.g. what the user said).
+    pub fn prefetch(&self, text: &str) {
+        self.lookup(text, false);
+    }
+
+    fn queue(&self, sentence: String) {
+        self.lookup(&sentence, true);
+        let _ = self.tx.send(Msg::Sentence(*self.generation.lock().unwrap(), sentence));
+    }
+
+    fn lookup(&self, text: &str, urgent: bool) {
+        if let Some(p) = &self.pronouncer {
+            let missing = missing_words(&self.lexicon.read().unwrap(), text);
+            if !missing.is_empty() {
+                p.request(&missing, urgent);
+            }
+        }
     }
 }
 
@@ -124,41 +170,20 @@ struct Worker {
     synth: Synthesizer,
     playback: PlaybackSender,
     generation: Arc<Mutex<u64>>,
-    splitter: SentenceSplitter,
-    /// Generation the splitter's buffered text belongs to.
-    current: u64,
+    pronouncer: Option<Pronouncer>,
 }
 
 impl Worker {
-    fn run(mut self, rx: mpsc::Receiver<Msg>) {
+    fn run(self, rx: mpsc::Receiver<Msg>) {
         for msg in rx {
-            let (generation, text, end) = match msg {
-                Msg::Text(g, t) => (g, Some(t), false),
-                Msg::Flush(g) => (g, None, false),
-                Msg::End(g) => (g, None, true),
-            };
-            if generation != *self.generation.lock().unwrap() {
-                continue;
-            }
-            if generation != self.current {
-                self.splitter.clear();
-                self.current = generation;
-            }
-            match text {
-                Some(text) => {
-                    for sentence in self.splitter.push(&text) {
-                        self.speak(generation, &sentence);
+            match msg {
+                Msg::Sentence(g, sentence) => {
+                    if g == *self.generation.lock().unwrap() {
+                        self.speak(g, &sentence);
                     }
                 }
-                None => {
-                    if let Some(sentence) = self.splitter.finish() {
-                        self.speak(generation, &sentence);
-                    }
-                    if !end {
-                        continue;
-                    }
-                    let current = self.generation.lock().unwrap();
-                    if *current == generation {
+                Msg::End(g) => {
+                    if g == *self.generation.lock().unwrap() {
                         self.playback.end();
                     }
                 }
@@ -167,6 +192,15 @@ impl Worker {
     }
 
     fn speak(&self, generation: u64, sentence: &str) {
+        if let Some(p) = &self.pronouncer {
+            let missing = missing_words(&self.synth.lexicon().read().unwrap(), sentence);
+            let t = Instant::now();
+            let cancelled = || *self.generation.lock().unwrap() != generation;
+            if !missing.is_empty() && p.wait(&missing, t + LOOKUP_WAIT, cancelled) {
+                let ms = t.elapsed().as_secs_f64() * 1e3;
+                tracing::debug!("tts: waited {ms:.0} ms for pronunciations");
+            }
+        }
         let t = Instant::now();
         let samples = self.synth.synthesize(sentence);
         tracing::debug!(

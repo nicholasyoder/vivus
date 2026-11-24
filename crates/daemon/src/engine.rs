@@ -202,6 +202,10 @@ impl Engine {
             }
             Event::Final(text) => {
                 tracing::info!("heard: {text}");
+                if let Some(s) = &self.speaker {
+                    // Names the user says tend to come back in the reply.
+                    s.prefetch(&text);
+                }
                 self.transcript("user", &text, true).await?;
                 self.respond(&text).await?;
             }

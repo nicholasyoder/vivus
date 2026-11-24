@@ -17,6 +17,10 @@ pub struct ChatRequest {
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    /// `low` / `medium` / `high` for reasoning models that take it (Groq's
+    /// gpt-oss, OpenAI o-series); others may reject the request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
 }
 
 impl ChatRequest {

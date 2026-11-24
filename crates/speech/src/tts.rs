@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use sherpa_onnx::{GenerationConfig, OfflineTts, OfflineTtsConfig};
 
@@ -48,10 +49,19 @@ impl Default for Options {
     }
 }
 
+/// The lexicon is shared so pronunciations learned while speaking (LLM lookups)
+/// apply to the next sentence.
+pub type SharedLexicon = Arc<RwLock<Lexicon>>;
+
+/// Words of raw `text` that would be skipped: normalized, then phonemized.
+pub fn missing_words(lexicon: &Lexicon, text: &str) -> Vec<String> {
+    lexicon.missing(&normalize(text, lexicon))
+}
+
 pub struct Synthesizer {
     tts: OfflineTts,
     generation: GenerationConfig,
-    lexicon: Lexicon,
+    lexicon: SharedLexicon,
     tokens: HashSet<char>,
 }
 
@@ -119,7 +129,7 @@ impl Synthesizer {
         let tts =
             OfflineTts::create(&config).ok_or_else(|| Error::LoadFailed(model.name.into()))?;
         Ok(Self {
-            lexicon,
+            lexicon: Arc::new(RwLock::new(lexicon)),
             tokens,
             tts,
             generation: GenerationConfig {
@@ -134,20 +144,27 @@ impl Synthesizer {
         self.tts.sample_rate() as u32
     }
 
+    pub fn lexicon(&self) -> SharedLexicon {
+        self.lexicon.clone()
+    }
+
     /// Written text as this model will say it (numbers, units, … as words).
     pub fn normalize(&self, text: &str) -> String {
-        normalize(text, &self.lexicon)
+        normalize(text, &self.lexicon.read().unwrap())
     }
 
     /// Phonemes for normalized `text`, and the words that have none.
     pub fn phonemize(&self, text: &str) -> Phonemized {
-        self.lexicon.phonemize(text)
+        self.lexicon.read().unwrap().phonemize(text)
     }
 
     /// Mono f32 samples at [`Self::sample_rate`]. Empty if nothing was speakable.
     /// Normalizes and phonemizes first; logs words with no pronunciation.
     pub fn synthesize(&self, text: &str) -> Vec<f32> {
-        let Phonemized { phonemes, missing } = self.phonemize(&self.normalize(text));
+        let Phonemized { phonemes, missing } = {
+            let lexicon = self.lexicon.read().unwrap();
+            lexicon.phonemize(&normalize(text, &lexicon))
+        };
         if !missing.is_empty() {
             tracing::info!("tts: no pronunciation, skipped: {}", missing.join(", "));
         }

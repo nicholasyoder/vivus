@@ -31,22 +31,27 @@ pub struct Phonemized {
     pub missing: Vec<String>,
 }
 
+fn xdg_pronunciations(var: &str, fallback: &str) -> Option<PathBuf> {
+    std::env::var_os(var)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(fallback)))
+        .map(|d| d.join("vivus/pronunciations.txt"))
+}
+
 /// Pronunciation files in priority order: the user's
 /// (`$XDG_CONFIG_HOME/vivus/pronunciations.txt`), then the learned ones
-/// (`$XDG_DATA_HOME/vivus/pronunciations.txt`). Either may not exist.
+/// ([`learned_pronunciation_file`]). Either may not exist.
 pub fn default_pronunciation_files() -> Vec<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let xdg = |var: &str, fallback: &str| {
-        std::env::var_os(var)
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| home.as_ref().map(|h| h.join(fallback)))
-            .map(|d| d.join("vivus/pronunciations.txt"))
-    };
-    [xdg("XDG_CONFIG_HOME", ".config"), xdg("XDG_DATA_HOME", ".local/share")]
+    [xdg_pronunciations("XDG_CONFIG_HOME", ".config"), learned_pronunciation_file()]
         .into_iter()
         .flatten()
         .collect()
+}
+
+/// Where looked-up pronunciations are cached: `$XDG_DATA_HOME/vivus/pronunciations.txt`.
+pub fn learned_pronunciation_file() -> Option<PathBuf> {
+    xdg_pronunciations("XDG_DATA_HOME", ".local/share")
 }
 
 impl Lexicon {
@@ -167,6 +172,16 @@ impl Lexicon {
             }
         }
         n
+    }
+
+    /// Adds one ARPAbet entry (`HH AY1 P ER0 …`) unless the word already has one.
+    pub fn learn(&mut self, word: &str, arpabet: &str) -> Result<(), String> {
+        let phones = arpabet::parse(arpabet)?;
+        if phones.is_empty() {
+            return Err("no phones".into());
+        }
+        self.insert(word, arpabet::to_phonemes(&phones, self.set));
+        Ok(())
     }
 
     /// Phonemes for one word: the lexicon's entry, else a suffix rule applied
@@ -518,5 +533,8 @@ mod tests {
         l.add_lexicon("hyprland h ˈI\n");
         assert_eq!(l.lookup("Hyprland").as_deref(), Some("hˈIpəɹlˌænd"));
         assert_eq!(l.lookup("Hyprland's").as_deref(), Some("hˈIpəɹlˌændz"));
+        assert!(l.learn("nginx", "EH1 N JH IH0 N EH2 K S").is_ok());
+        assert!(l.learn("bad", "XX1").is_err());
+        assert!(l.contains("NGINX"));
     }
 }
