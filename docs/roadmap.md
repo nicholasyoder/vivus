@@ -41,7 +41,7 @@ everyday use work comes first, then smarter answers, then polish.
 
 ### 1c: Basic desktop control
 
-- [ ] App launching: parse `.desktop` files, fuzzy-match the spoken name, launch with an `xdg-activation` token
+- [x] App launching: parse `.desktop` files, fuzzy-match the spoken name, launch with an `xdg-activation` token (2026-11-24, `f240169`) — [desktop-control.md](desktop-control.md#app-launching)
 - [ ] Windows: list with `ext-foreign-toplevel-list-v1`; switch/close/minimize with `wlr-foreign-toplevel-management`; active window as context (`vivus-wayland`); prefetch pronunciations of window titles
 - [ ] Push-to-talk and toggle-listen through the `GlobalShortcuts` portal (`vivusctl` stays the fallback)
 - [ ] Clipboard read/write via `wlr-data-control`
