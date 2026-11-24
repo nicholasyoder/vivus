@@ -113,7 +113,9 @@ shrink, and lets the router start speculatively before you've definitely finishe
   except while playing. `play` queues, `end` reports `on_finished` after
   PipeWire's `drained`, `stop` drops everything at once; `pause`/`resume`
   hold the queue (barge-in). `[audio] output` targets a node.
-- **Ducking** (`crates/audio/src/duck.rs`): while playback is active, every
+- **Ducking** (`crates/audio/src/duck.rs`): while we're actually speaking
+  (playback has audio; 1 s of silence, e.g. waiting on an escalation after
+  the filler, brings them back up until speech resumes), every
   other app's output stream (not our `vivus-*` nodes; registry globals carry no
   process id to tell them apart) is turned down to `[audio] duck_volume` (default
   0.3, about -10 dB; 1 turns it off). It scales the streams' `softVolumes`,

@@ -122,7 +122,14 @@ struct State {
     ending: bool,
     /// Queue empty after `end()`; waiting for PipeWire's `drained`.
     draining: bool,
+    /// Frames of underrun (silence) played in a row.
+    silent: usize,
 }
+
+/// Silence after which other apps come back up mid-reply (e.g. while an
+/// escalation runs after the filler). Shorter gaps between sentences keep
+/// them ducked, so music doesn't bob up and down.
+const UNDUCK_AFTER_SECS: usize = 1;
 
 fn run(
     opts: PlaybackOptions,
@@ -169,6 +176,8 @@ fn run(
     let process_state = state.clone();
     let drained_state = state.clone();
     let drained_duck = duck.clone();
+    let process_duck = duck.clone();
+    let unduck_frames = opts.sample_rate as usize * UNDUCK_AFTER_SECS;
     let _listener = stream
         .add_local_listener::<()>()
         .state_changed(|_, _, old, new| tracing::debug!("playback stream: {old:?} -> {new:?}"))
@@ -195,6 +204,14 @@ fn run(
                             false => st.queue.pop_front().unwrap_or(0.0),
                         };
                         out.copy_from_slice(&s.to_le_bytes());
+                    }
+                    if st.queue.is_empty() && !st.paused {
+                        st.silent += n;
+                        if st.silent >= unduck_frames {
+                            process_duck(false);
+                        }
+                    } else {
+                        st.silent = 0;
                     }
                     n
                 }
@@ -277,7 +294,9 @@ fn run(
         match msg {
             Control::Play(samples) => {
                 st.queue.extend(samples);
+                st.silent = 0;
                 set_active(&mut st, true);
+                duck(true); // again, if a long gap brought the others back up
             }
             Control::End if !st.active && st.queue.is_empty() => {
                 drop(st);
