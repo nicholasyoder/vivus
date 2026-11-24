@@ -20,7 +20,8 @@ using only standard protocols.
 
 ### Inference
 
-- [ ] `vivus-inference`: OpenAI-compatible streaming chat client with tool calls — [inference.md](inference.md)
+- [x] `vivus-inference`: OpenAI-compatible streaming chat client with tool calls (2026-11-23, `HASH`) — [inference.md](inference.md)
+- [ ] Smoke-test the client against Groq and nano-gpt with real keys (`--example chat`) — [inference.md](inference.md#client-cratesinference)
 - [ ] Router: one streaming call with `speak` / `show` / `escalate` tools and the speech-vs-sidebar rules (numbers as words until normalization lands); `speak` streams into TTS — [inference.md](inference.md#routing)
 - [ ] Escalation to `answer` and `agent`, including the Claude Code provider — [inference.md](inference.md#roles)
 - [ ] Context providers: time/date, locale, active window, clipboard — [architecture.md](architecture.md#daemon-internals)
@@ -110,6 +111,7 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 ## Decided
 
+- OpenAI-compatible client is our own `reqwest` + SSE code, not `async-openai`, for quirk tolerance and raw tool-argument deltas (2026-11-23).
 - Inference before the rest of the voice items, to get the live STT → LLM → TTS loop working first (2026-11-23).
 - OOV pronunciations come mainly from LLM lookup, cached; user entries override. A first sentence may wait a few seconds for a lookup (2026-11-23).
 

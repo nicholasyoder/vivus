@@ -24,10 +24,30 @@ already used elsewhere, so don't make it the only option) and
 [nano-gpt](https://docs.nano-gpt.com/introduction) (OpenAI-compatible, hosts
 most models). Defaults and tests should work with either.
 
-Still to decide in the `vivus-inference` session: an existing client crate
-(e.g. `async-openai`) or a small `reqwest` + SSE client of our own. What
-matters: streaming tool-call arguments (parse `speak`'s partial `text` as it
-arrives), cancelling a stream mid-reply, and tolerance for providers' quirks.
+### Client (`crates/inference`)
+
+A small `reqwest` + SSE client of our own rather than `async-openai`: generated
+SDK types reject the quirks below, and we need raw tool-argument deltas.
+
+- `Client::from_provider` reads the key from `api_key_env`; `chat()` returns a
+  `ChatStream` of `Event`s (`Text`, `Reasoning`, `ToolCallStart`,
+  `ToolCallArgs`, then `Done(Reply)` with the assembled turn and usage).
+  `complete()` drains it.
+- Cancelling is dropping the stream: the connection closes and the provider
+  stops generating.
+- `partial::StringField` decodes a string field from tool arguments while they
+  stream (escapes split across chunks are held back), so `speak`'s `text` can
+  go to TTS sentence by sentence.
+- Tolerated quirks: SSE comments and CRLF, no `[DONE]`, usage-only final chunk,
+  a JSON body despite `stream: true`, `error` objects mid-stream, tool calls
+  without `index` or reusing one index with new ids, `id`/`name` repeated per
+  chunk, arguments as an object instead of a string, empty arguments,
+  `reasoning` / `reasoning_content`.
+- Timeouts: 10 s connect, 60 s between reads, no total limit.
+
+Try a configured role: `cargo run -p vivus-inference --example chat -- [--role answer] <prompt>`.
+Tested against a local mock server only so far; no provider key was available
+in the dev session (2026-11-23).
 
 ## Routing
 
