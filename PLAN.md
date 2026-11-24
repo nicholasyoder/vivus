@@ -22,9 +22,10 @@ to you, and get answers the way you'd expect them:
 
 1. **Not tied to one compositor.** Use standard Wayland protocols (`ext-*`, then `wlr-*`) first. Anything missing gets a **new, documented protocol** that `vivus` defines and Biome implements as the reference. Any other compositor can support `vivus` by implementing the same protocols. Supporting only wlroots-based compositors is acceptable where nothing standard exists (e.g. window activation).
 2. **Standalone first, Forest second.** `vivus` must be fully usable without Forest. A future Forest plugin is only a bridge: a D-Bus client that renders the sidebar in Forest's style. It must never be the only way to use `vivus`.
-3. **Inference is configuration, not code.** Every model role points at whatever endpoint you configure: Groq, any OpenAI-compatible API, a local server, or Claude Code. Remote inference is expected to be the default for speed.
+3. **Inference is configuration, not code.** Every model role points at whatever endpoint you configure: Groq, any OpenAI-compatible API, a local server, or Claude Code. LLM roles default to remote inference for speed; speech (VAD, STT, TTS) defaults to local, because it runs continuously and needs streaming (§4.2).
 4. **Structured actions before clicking pixels.** Prefer app launching, compositor protocols, D-Bus, AT-SPI actions, CLIs and app APIs over screenshot-and-click. They're more reliable and let cheaper models do more of the work. Screenshot-and-click is the last fallback.
 5. **Latency is a feature.** Time from the end of your speech to the first audio back matters more than how smart the model is for everyday requests. Stream everything and cancel instantly when you interrupt.
+6. **Light by default, scale up when it helps.** It must run on an ordinary laptop with no GPU. Bigger local models (or remote ones) are a config choice, not a requirement. When lightness and voice quality conflict, voice quality wins, but pick the smallest model that gets there.
 
 ## 3. Architecture
 
@@ -86,8 +87,9 @@ the Forest plugin implements a D-Bus client.
 ### 3.3 Daemon internals
 
 - **Async runtime:** tokio. Every stage is a cancellable task. Interrupting (you start speaking while it's talking) cancels in-flight TTS, LLM streams and pending tool calls.
-- **Audio:** PipeWire, through the `pipewire` crate or `cpal`. Echo cancellation through PipeWire's `module-echo-cancel` (document how to set it up, or load it automatically). VAD with Silero VAD (ONNX through `ort`) to detect the end of an utterance.
-- **Turn detection:** VAD silence threshold first. Consider a semantic end-of-turn check later, so pauses mid-sentence don't cut you off.
+- **Audio:** PipeWire through the `pipewire` crate (so we can target the echo-cancel node directly). Echo cancellation through PipeWire's `module-echo-cancel` (document how to set it up, or load it automatically).
+- **Speech runtime:** [`sherpa-onnx`](https://docs.rs/sherpa-onnx) for Silero VAD, local STT and local TTS. One CPU-friendly ONNX runtime covers every speech model in §4.2. Its build script downloads a prebuilt static library; packagers set `SHERPA_ONNX_LIB_DIR` instead.
+- **Turn detection:** VAD silence threshold first, kept short because live partial transcripts make a wrong guess cheap. Then a semantic end-of-turn check on the partial text, so pauses mid-sentence don't cut you off, and so the router can start speculatively before you've definitely finished.
 - **Context providers:** small functions that supply context for each request: current time and date, locale, active window (app ID and title), clipboard text, and later selected text, window text and gaze target. The router gets a compact summary; the agent can ask for the full content through tools.
 - **Conversation memory:** a short rolling history so follow-ups work ("open it", "what about the second one?"). Sidebar documents are kept and can be referred back to.
 
@@ -99,8 +101,8 @@ Configured in `~/.config/vivus/config.toml`. Each role names a provider plus a m
 
 | Role | Job | Typical choice |
 |---|---|---|
-| `stt` | Streaming speech-to-text | Groq Whisper, Deepgram, or local (Parakeet / faster-whisper) |
-| `tts` | Low-latency speech | Local Kokoro / Piper, or a cloud TTS |
+| `stt` | Streaming speech-to-text | Local via sherpa-onnx (see §4.2); remote Groq Whisper / Deepgram as alternatives |
+| `tts` | Low-latency speech | Local via sherpa-onnx (Kokoro, Kitten), or a cloud TTS |
 | `router` | Every request: answers simple requests directly, calls quick tools, decides when to escalate | Fast small model (e.g. on Groq) |
 | `answer` | Knowledge and web questions that need more quality than the router | Mid-tier model |
 | `agent` | Multi-step tasks, computer control, heavy research | Frontier model through an OpenAI-compatible API or a headless Claude Code (`claude -p --output-format stream-json`) / Agent SDK |
@@ -124,7 +126,23 @@ model = "<fast-model>"
 provider = "claude-code"
 ```
 
-### 4.2 Routing: one model call with tools, not a separate classifier
+### 4.2 Speech: local and streaming by default
+
+The STT interface is streaming: audio frames go in, **partial** and **final** transcripts come out. Partials drive the live transcript in the sidebar, the semantic end-of-turn check and speculative router calls. A provider that can only transcribe whole utterances (Groq Whisper) still fits: it just emits a final and no partials, at the cost of the faster end-of-turn.
+
+Local STT either uses a native streaming model or re-decodes the growing utterance every ~300 ms with an offline model ("simulated streaming", which sherpa-onnx has examples for). Re-decoding is cheap for the small models and keeps the final transcript only one short decode behind the end of speech.
+
+Model tiers (all through sherpa-onnx; exact choices to be benchmarked in Phase 1):
+
+| Tier | STT | TTS | Target machine |
+|---|---|---|---|
+| Light | Moonshine (tiny/base) or a streaming Zipformer | Kitten TTS | Any laptop CPU |
+| Standard (default) | Parakeet TDT 0.6B (int8), simulated streaming | Kokoro (82M) | 4+ cores, no GPU |
+| Remote | Groq Whisper (final only), Deepgram (streaming) | Cloud TTS | Anything with a network |
+
+Barge-in (interrupting by talking) needs VAD and STT running during playback, which depends on echo cancellation. Keeping speech local means that always-on listening costs no network round trips.
+
+### 4.3 Routing: one model call with tools, not a separate classifier
 
 The router gets the transcript plus context in one streaming call, with tools:
 
@@ -141,7 +159,7 @@ Rules for the speech/sidebar split (system prompt and examples):
 
 Streaming: the text from `speak` is sent to TTS one sentence at a time while it's still being generated.
 
-### 4.3 Web access
+### 4.4 Web access
 
 `web_search` and `fetch_url` tools with configurable providers (e.g. Brave, Tavily, SearXNG, or the search built into a provider). Results go into the sidebar with sources.
 
@@ -154,7 +172,7 @@ using only standard protocols.
 
 **Scope**
 - Push-to-talk and toggle-listen through the `GlobalShortcuts` portal (Biome has a backend), with `vivusctl` as a fallback for any compositor (bind a key to run a command).
-- Streaming STT, then the router, then TTS, with interruption and echo cancellation.
+- Streaming STT (local by default, §4.2) with live partials, then the router, then TTS, with barge-in and echo cancellation.
 - The sidebar: a layer-shell panel that shows/hides on demand, renders markdown documents, keeps a history of past documents, and shows the listening/thinking/speaking state.
 - Knowledge Q&A, web search Q&A ("what's that song that starts with…", "latest AI news"), how-to questions ("how do I make a list in HTML").
 - App control with standard protocols:
@@ -169,6 +187,7 @@ using only standard protocols.
 - "Open my browser", "switch to my file manager", "close this" work reliably on Biome and on at least one other wlroots compositor (sway or Hyprland).
 - Interrupting mid-reply stops it within ~200 ms.
 - Every inference role can be switched between at least two providers using only the config file.
+- The light tier holds a normal conversation on a 4-core laptop with no GPU.
 
 ### Phase 2: Screen awareness and deeper computer control
 
@@ -229,7 +248,7 @@ KDE/GNOME backends are not a goal, but the backend interface should leave room f
 
 - ~~Sidebar: QML or Widgets?~~ Widgets (decided 2026-11-20), so Forest QSS themes can style it; it ships its own default QSS, overridable at `~/.config/vivus/sidebar.qss`.
 - Wake word as well as push-to-talk? (Privacy plus false triggers vs. convenience.) Probably later and optional.
-- Local fallback when offline: which roles should have a local default?
+- Local fallback when offline: speech is local already; should the router have a small local fallback too?
 - Storing API keys: environment variables, Secret Service (libsecret), or a config file?
 - How much conversation history and sidebar history to keep, and where to store it.
 - Security of action tools: which actions need spoken/visual confirmation, and how to avoid prompt injection from screen or web text causing actions (treat extracted text as data; confirm actions it suggests).
