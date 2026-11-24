@@ -37,7 +37,6 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] STT fixes from real use: streaming edge padding, `parakeet-tdt-0.6b` as standard tier, one-word barge-in (2026-11-24, `e5bdfa3`, `65c1a75`, `492159f`) — [speech.md](speech.md#tiers)
 - [x] `[audio] record_utterances`: save each utterance as heard, with its transcript (2026-11-24, `4189315`) — [speech.md](speech.md#recording-utterances)
 - [x] Echo cancellation quality: stereo reference, no noise suppression, duck other apps while the user talks; bench in `scripts/aec-bench/` (2026-11-24, `113e991`) — [speech.md](speech.md#echo-cancellation-quality)
-- [ ] STT on the raw mic while we're not speaking (VAD/barge-in stay on the cancelled signal) — [speech.md](speech.md#echo-cancellation-quality)
 - [ ] Keep the mic and canceller warm between listens (onboard inputs' wake-up thump clips the first ~1.5 s; the canceller restarts unconverged) — [speech.md](speech.md#echo-cancellation-quality)
 - [ ] Warn when the mic input clips (log, later the settings page's level meter) — [speech.md](speech.md#echo-cancellation-quality)
 - [ ] STT accuracy on real speech: compare models (Whisper, Qwen3-ASR) on recorded utterances; remote STT if local isn't enough — [speech.md](speech.md#recording-utterances)
@@ -130,5 +129,6 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 - Sidebar uses Qt Widgets + QSS, not QML, so Forest's QSS themes can style it (2026-11-20).
 - Speech (VAD/STT/TTS) is local by default; LLM roles are remote by default (2026-11-23).
+- STT always uses the echo-cancelled signal, never the raw mic: the raw mic transcribes music slightly better but would hear podcasts, videos and lyrics as the user (2026-11-24).
 - STT interface streams partials and finals; local default is `parakeet-tdt-110m` (2026-11-23).
 - Local TTS: `kitten-nano` (light, default) and `kokoro` v1.0 (standard), fp32 (int8 is ~2× slower on x86), lexicon frontend since sherpa-onnx 2.x has no espeak-ng (2026-11-23).

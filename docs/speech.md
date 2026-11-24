@@ -350,8 +350,8 @@ Word error rate, music at about the voice's level (−24 dBFS RMS at the mic):
   echo, and PipeWire exposes no suppressor tuning. Which words overlap the
   loudest music matters a lot (46% vs 60% for the same setup, music shifted).
   With music playing the raw mic transcribes better than any canceller output,
-  so STT on the raw mic while we're silent is worth trying (VAD and barge-in
-  still on the cancelled signal). The canceller restarts unconverged whenever
+  but STT stays on the cancelled signal: without it, podcasts, videos and
+  sung lyrics are transcribed as the user. The canceller restarts unconverged whenever
   capture starts (its nodes suspend while we're not listening), so the first
   seconds of push-to-talk over music are worst.
 - **Mic gain.** The real recordings peaked at 0 dBFS with up to 4% of samples
@@ -377,8 +377,7 @@ Word error rate, music at about the voice's level (−24 dBFS RMS at the mic):
   | louder | −27.1 dB | 1.3% | 76.2% | 4.0% |
 
   The real room is far kinder than the simulated one: the new settings cost
-  at most a few words in 151, so raw-mic STT (roadmap) matters less than the
-  bench suggested. Still unmeasured on real audio: talking over our own TTS.
+  at most a few words in 151 against no canceller. Still unmeasured on real audio: talking over our own TTS.
 
 Local speech means always-on listening costs no network round trips.
 
