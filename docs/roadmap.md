@@ -21,7 +21,7 @@ using only standard protocols.
 ### Inference
 
 - [x] `vivus-inference`: OpenAI-compatible streaming chat client with tool calls (2026-11-23, `696b45d`) — [inference.md](inference.md)
-- [ ] Smoke-test the client against Groq and nano-gpt with real keys (`--example chat`) — [inference.md](inference.md#client-cratesinference)
+- [x] Smoke-test the client against Groq and nano-gpt with real keys (`--example chat`) (2026-11-23, `HASH`) — [inference.md](inference.md#smoke-test-2026-11-23)
 - [ ] Router: one streaming call with `speak` / `show` / `escalate` tools and the speech-vs-sidebar rules (numbers as words until normalization lands); `speak` streams into TTS — [inference.md](inference.md#routing)
 - [ ] Escalation to `answer` and `agent`, including the Claude Code provider — [inference.md](inference.md#roles)
 - [ ] Context providers: time/date, locale, active window, clipboard — [architecture.md](architecture.md#daemon-internals)
@@ -101,6 +101,7 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 ## Open questions
 
+- Router speech channel: providers send tool arguments in one final chunk, so `speak(text)` can't stream to TTS. Put spoken text in streamed `content` and keep tools for `show`/`escalate`/actions? (Recommended; decide before the router item.) — [inference.md](inference.md#smoke-test-2026-11-23)
 - Is ~1 s from end of speech to audio realistic for normal replies? Measure once the loop runs.
 
 - Wake word as well as push-to-talk? Probably later and optional.

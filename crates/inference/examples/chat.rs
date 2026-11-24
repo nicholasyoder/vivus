@@ -48,6 +48,8 @@ async fn main() -> anyhow::Result<()> {
 
     let start = std::time::Instant::now();
     let mut first = None;
+    let mut first_spoken = None;
+    let mut arg_chunks = 0;
     let mut speak: Option<(usize, StringField)> = None;
     let mut stream = client.chat(&req).await?;
     let mut out = std::io::stdout();
@@ -62,14 +64,23 @@ async fn main() -> anyhow::Result<()> {
                     speak = Some((index, StringField::new("text")));
                 }
             }
-            Event::ToolCallArgs { index, delta } => match &mut speak {
-                Some((i, f)) if *i == index => print!("{}", f.push(&delta).unwrap_or_default()),
-                _ => print!("{delta}"),
-            },
+            Event::ToolCallArgs { index, delta } => {
+                arg_chunks += 1;
+                match &mut speak {
+                    Some((i, f)) if *i == index => {
+                        if let Some(t) = f.push(&delta) {
+                            first_spoken.get_or_insert_with(|| start.elapsed());
+                            print!("{t}");
+                        }
+                    }
+                    _ => print!("{delta}"),
+                }
+            }
             Event::Done(reply) => {
                 println!(
-                    "\n\n-- first event {:?}, total {:?}, finish {:?}, usage {:?}",
+                    "\n\n-- first event {:?}, first spoken text {:?}, total {:?}, {arg_chunks} argument chunks, finish {:?}, usage {:?}",
                     first.unwrap_or_default(),
+                    first_spoken,
                     start.elapsed(),
                     reply.finish_reason,
                     reply.usage

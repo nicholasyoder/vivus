@@ -46,9 +46,30 @@ SDK types reject the quirks below, and we need raw tool-argument deltas.
   `reasoning` / `reasoning_content`.
 - Timeouts: 10 s connect, 60 s between reads, no total limit.
 
-Try a configured role: `cargo run -p vivus-inference --example chat -- [--role answer] <prompt>`.
-Tested against a local mock server only so far; no provider key was available
-in the dev session (2026-11-23).
+Try a configured role: `cargo run -p vivus-inference --example chat -- [--role answer] <prompt>`
+(keys in the environment or `~/.config/vivus/.env`). It prints time to first
+event, to first spoken text, and the number of argument chunks.
+
+### Smoke test (2026-11-23)
+
+Asked to answer through a `speak` tool:
+
+| Provider | Model | First event | First `speak` text | Total |
+|---|---|---|---|---|
+| Groq | `openai/gpt-oss-20b` | 0.2–0.4 s (reasoning) | 0.5 s | 0.5 s |
+| nano-gpt | `deepseek/deepseek-v4.1-flash-1017` | 2.3–2.9 s | same | same |
+
+- Tool calls, escaped quotes in arguments, `finish_reason` and usage all come
+  through on both.
+- **Neither streams tool arguments**: the whole call arrives in one chunk at the
+  end (also `openai/gpt-5.4-mini` via nano-gpt). Plain `content` does stream on
+  both. So `speak` as a tool can't start TTS early; see [Routing](#routing).
+- Groq omits `index` on tool-call deltas (handled) and sends gpt-oss reasoning
+  as `reasoning` with a `channel` field.
+- nano-gpt's first token takes ~2 s even for plain text: fine for `answer`,
+  too slow for `router`.
+- Groq free tier: `qwen/qwen3.8-27b` rejects requests over 1000 output tokens
+  per minute, so set `max_tokens` on the router.
 
 ## Routing
 
@@ -68,7 +89,10 @@ Speech/sidebar rules (system prompt and examples):
 - When escalating: filler line immediately; when the result arrives, a spoken summary and the full detail in the sidebar.
 
 The text from `speak` goes to TTS one sentence at a time while it's still being
-generated.
+generated. But the providers tested buffer tool arguments until the call is
+complete ([smoke test](#smoke-test-2026-11-23)), so streaming only works if the
+spoken reply is plain `content` and the tools are for `show`, `escalate` and
+actions. Still open; see the roadmap.
 
 ## Web access
 
