@@ -178,9 +178,72 @@ impl Synthesizer {
             phoneme_codepoints: Some(vec![codepoints]),
             ..self.generation.clone()
         };
-        self.tts
+        let mut samples = self
+            .tts
             .generate_with_config("", &generation, None::<fn(&[f32], f32) -> bool>)
             .map(|audio| audio.samples().to_vec())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        level(&mut samples, self.sample_rate());
+        samples
+    }
+}
+
+/// RMS of the voiced part of a sentence after `level`: about -16 LUFS for
+/// speech. Kokoro comes out near -25 LUFS and Kitten near -20, quiet next
+/// to music (typically -8 to -14).
+const TARGET_RMS_DB: f32 = -14.0;
+/// Peaks above this are compressed smoothly towards full scale.
+const LIMITER_KNEE: f32 = 0.7;
+
+/// Brings a sentence to `TARGET_RMS_DB`, measured over 20 ms frames within
+/// 25 dB of the loudest, so pauses don't count. Per sentence is enough: one
+/// voice's sentences are already consistent with each other.
+fn level(samples: &mut [f32], sample_rate: u32) {
+    let frame = (sample_rate / 50) as usize;
+    let rms: Vec<f32> = samples
+        .chunks(frame)
+        .map(|c| (c.iter().map(|s| s * s).sum::<f32>() / c.len() as f32).sqrt())
+        .collect();
+    let loudest = rms.iter().copied().fold(0.0, f32::max);
+    if loudest < 1e-4 {
+        return;
+    }
+    let voiced: Vec<f32> = rms.into_iter().filter(|&r| r > loudest * 0.056).collect();
+    let voiced_rms = (voiced.iter().map(|r| r * r).sum::<f32>() / voiced.len() as f32).sqrt();
+    let gain = (10f32.powf(TARGET_RMS_DB / 20.0) / voiced_rms).clamp(0.25, 8.0);
+    for s in samples.iter_mut() {
+        let x = (*s * gain).abs();
+        let y = if x <= LIMITER_KNEE {
+            x
+        } else {
+            LIMITER_KNEE + (1.0 - LIMITER_KNEE) * ((x - LIMITER_KNEE) / (1.0 - LIMITER_KNEE)).tanh()
+        };
+        *s = y.copysign(*s);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rms_db(s: &[f32]) -> f32 {
+        20.0 * (s.iter().map(|x| x * x).sum::<f32>() / s.len() as f32).sqrt().log10()
+    }
+
+    #[test]
+    fn level_reaches_target_and_ignores_silence() {
+        let tone: Vec<f32> = (0..24_000).map(|i| 0.05 * (i as f32 * 0.05).sin()).collect();
+        let mut samples = [vec![0.0; 24_000], tone].concat();
+        level(&mut samples, 24_000);
+        assert!((rms_db(&samples[24_000..]) - TARGET_RMS_DB).abs() < 0.5);
+        assert!(samples[..24_000].iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn level_never_clips() {
+        let mut samples: Vec<f32> =
+            (0..24_000).map(|i| if i % 100 == 0 { 0.9 } else { 0.01 }).collect();
+        level(&mut samples, 24_000);
+        assert!(samples.iter().all(|s| s.abs() < 1.0));
     }
 }

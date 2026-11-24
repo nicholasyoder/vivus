@@ -67,3 +67,6 @@ end_of_turn_silence = 0.4
 # replies by talking, even with music on. Turn off if `input` is already
 # echo-cancelled; the mic is then paused while speaking.
 echo_cancel = true
+# Other apps' volume (music, videos) while vivus speaks, relative to their own;
+# 1.0 leaves them alone. Your mixer's volumes for them are left untouched.
+duck_volume = 0.3

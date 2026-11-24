@@ -106,6 +106,8 @@ impl Engine {
             }
             if matches!(cmd, Command::Quit) {
                 tracing::info!("quit requested");
+                // While the audio threads are all up, so ducked apps get restored.
+                self.cancel_reply();
                 break;
             }
             if let Err(e) = self.handle(cmd).await {

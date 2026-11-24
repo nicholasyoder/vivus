@@ -32,7 +32,8 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] LLM pronunciation lookup for OOV words, started while the reply streams; cached in the learned lexicon; idle prefetch of app names and transcripts (2026-11-24, `aeae4c1`) — [speech.md](speech.md#out-of-lexicon-words)
 - [x] Echo cancellation (auto-loaded PipeWire `module-echo-cancel`, monitor mode so music is cancelled too) and barge-in: possible speech pauses TTS, confirmed speech cancels TTS and LLM (2026-11-24, `4ac2343`) — [speech.md](speech.md#barge-in)
 - [ ] Try echo cancellation and barge-in in a real room, with music; tune `min_speech_possible` — [speech.md](speech.md#barge-in)
-- [ ] Capture downmixes all channels (a stereo mic currently links only `FL`)
+- [x] Capture downmixes all channels (a stereo mic currently links only `FL`) (2026-11-24, `HASH`)
+- [x] Speech on both speakers (`MONO` channel position), louder TTS (levelled to ~-16 LUFS), other apps ducked while speaking (2026-11-24, `HASH`) — [speech.md](speech.md#tts)
 
 ### 1c: Basic desktop control
 
@@ -46,7 +47,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [ ] systemd user unit for the daemon; `.desktop` entry for the sidebar; model download via `vivusctl` instead of `scripts/fetch-models.sh`
 - [ ] `org.vivus.Settings` D-Bus interface (`Get`/`Set`/`Changed`); daemon writes config with `toml_edit`, watches the file and reloads live — [settings.md](settings.md#d-bus)
 - [ ] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon — [settings.md](settings.md#audio-devices)
-- [ ] Sidebar settings page: input/output device pickers, mic level meter, end-of-turn silence — [settings.md](settings.md)
+- [ ] Sidebar settings page: input/output device pickers, mic level meter, end-of-turn silence, speech volume, duck volume — [settings.md](settings.md)
 - [ ] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice — [settings.md](settings.md#roles-and-providers)
 
 ### 1e: Smarter answers

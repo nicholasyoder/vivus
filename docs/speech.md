@@ -16,7 +16,7 @@ engine reply text ─► vivus-tts thread: SentenceSplitter ─► Synthesizer (
    └─► PipeWire playback (vivus-playback thread, 24 kHz mono) ─► SpeakingFinished ─► engine
 ```
 
-- **Capture** (`crates/audio`): fixed F32 / 16 kHz / mono format so PipeWire's adapter resamples and downmixes. `[audio] input` targets a specific node; otherwise the default source. With `[audio] echo_cancel` (default on), capture goes through the echo canceller ([Barge-in](#barge-in)).
+- **Capture** (`crates/audio`): fixed F32 / 16 kHz / mono format so PipeWire's adapter resamples and downmixes. Both streams declare the `MONO` channel position: without it WirePlumber linked the one port to the first channel only (left mic, left speaker). `[audio] input` targets a specific node; otherwise the default source. With `[audio] echo_cancel` (default on), capture goes through the echo canceller ([Barge-in](#barge-in)).
 - **Listener** (`crates/speech/src/listener.rs`), two modes:
   - *Vad* (toggle-listen, conversation): VAD splits utterances. ~0.5 s of preroll is kept so the first syllable isn't lost.
   - *Hold* (push-to-talk): everything until release is one utterance, so pauses don't split it.
@@ -88,6 +88,12 @@ shrink, and lets the router start speculatively before you've definitely finishe
   only; Kitten: `bella`, `jasper`, `luna`, `bruno`, `rosie`, `hugo`, `kiki`,
   `leo`). Unset `tts` means `kitten-nano`. The daemon synthesizes a short
   warm-up phrase at load because the first inference is several times slower.
+- **Loudness**: each sentence is scaled so its voiced part (20 ms frames
+  within 25 dB of the loudest) has an RMS of -14 dBFS, about -16 LUFS, with a
+  soft limiter above 0.7. Raw output was -25 LUFS (Kokoro) and -20 (Kitten),
+  drowned out by music (usually -8 to -14). Kokoro gains ~9 dB, Kitten ~3;
+  both still round-trip through parakeet word for word. The stream's volume in
+  a mixer (WirePlumber remembers it) adjusts it further.
 - **No espeak-ng**: sherpa-onnx 2.x dropped it (GPL), so models need a lexicon.
   We phonemize ourselves ([Out-of-lexicon words](#out-of-lexicon-words), layer
   2) and hand sherpa `phoneme_codepoints`, so sherpa loads no lexicon. Kokoro's
@@ -105,7 +111,18 @@ shrink, and lets the router start speculatively before you've definitely finishe
   long first sentence doesn't delay audio.
 - **Playback** (`crates/audio/src/playback.rs`): F32 mono at the model rate, inactive
   except while playing. `play` queues, `end` reports `on_finished` after
-  PipeWire's `drained`, `stop` drops everything at once. `[audio] output` targets a node.
+  PipeWire's `drained`, `stop` drops everything at once; `pause`/`resume`
+  hold the queue (barge-in). `[audio] output` targets a node.
+- **Ducking** (`crates/audio/src/duck.rs`): while playback is active, every
+  other app's output stream is turned down to `[audio] duck_volume` (default
+  0.3, about -10 dB; 1 turns it off). It scales the streams' `softVolumes`,
+  not `channelVolumes`, which mixers show and WirePlumber saves per app, so a
+  user's volumes are never overwritten; changing an app's volume while ducked
+  is picked up and re-ducked. Soft and channel volumes don't always match (a
+  `pw-loopback` stream had channel 0.125, soft 1.0), so it scales whatever
+  soft volume the stream had. `Quit` stops speech first, so ducked streams are
+  restored while everything is connected. If the daemon is killed mid-reply,
+  other streams stay ducked until their volume is changed or they restart.
 - **Daemon** (`crates/daemon/src/speaker.rs`): own `vivus-tts` thread so STT keeps
   running during synthesis (needed for barge-in). Each reply has a generation;
   `stop()` bumps it under a lock, so audio from a cancelled reply never reaches

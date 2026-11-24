@@ -17,6 +17,9 @@ pub struct PlaybackOptions {
     pub target: Option<String>,
     /// Rate of the samples passed to [`Playback::play`]; PipeWire resamples.
     pub sample_rate: u32,
+    /// Volume of other apps' audio while we play, relative to theirs; `None`
+    /// leaves it alone.
+    pub duck: Option<f32>,
 }
 
 enum Control {
@@ -131,6 +134,22 @@ fn run(
     let mainloop = pw::main_loop::MainLoopRc::new(None)?;
     let context = pw::context::ContextRc::new(&mainloop, None)?;
     let core = context.connect_rc(None)?;
+    let ducker = match opts.duck {
+        Some(level) => match crate::duck::Ducker::new(&core, level) {
+            Ok(d) => Some(Rc::new(d)),
+            Err(e) => {
+                tracing::warn!("ducking other audio unavailable: {e}");
+                None
+            }
+        },
+        None => None,
+    };
+    let duck = move |on: bool| {
+        if let Some(d) = &ducker {
+            d.set(on);
+        }
+    };
+    let duck = Rc::new(duck);
 
     let mut props = properties! {
         *pw::keys::MEDIA_TYPE => "Audio",
@@ -143,12 +162,13 @@ fn run(
         props.insert(*pw::keys::TARGET_OBJECT, target.as_str());
     }
 
-    let stream = pw::stream::StreamRc::new(core, "vivus-playback", props)?;
+    let stream = pw::stream::StreamRc::new(core.clone(), "vivus-playback", props)?;
     let state = Rc::new(RefCell::new(State::default()));
     let on_finished = Rc::new(on_finished);
 
     let process_state = state.clone();
     let drained_state = state.clone();
+    let drained_duck = duck.clone();
     let _listener = stream
         .add_local_listener::<()>()
         .state_changed(|_, _, old, new| tracing::debug!("playback stream: {old:?} -> {new:?}"))
@@ -206,27 +226,14 @@ fn run(
                 if let Err(e) = stream.set_active(false) {
                     tracing::warn!("playback set_active(false): {e}");
                 }
+                drained_duck(false);
                 drop(st);
                 on_finished();
             }
         })
         .register()?;
 
-    let mut info = spa::param::audio::AudioInfoRaw::new();
-    info.set_format(spa::param::audio::AudioFormat::F32LE);
-    info.set_rate(opts.sample_rate);
-    info.set_channels(1);
-    let format = spa::pod::serialize::PodSerializer::serialize(
-        std::io::Cursor::new(Vec::new()),
-        &spa::pod::Value::Object(spa::pod::Object {
-            type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
-            id: spa::param::ParamType::EnumFormat.as_raw(),
-            properties: info.into(),
-        }),
-    )
-    .expect("serialize audio format")
-    .0
-    .into_inner();
+    let format = crate::mono_f32_format(opts.sample_rate);
     let mut params = [Pod::from_bytes(&format).expect("audio format pod")];
 
     stream.connect(
@@ -238,6 +245,22 @@ fn run(
         &mut params,
     )?;
 
+    // On quit, the restored volumes of ducked streams must reach the server.
+    let quit_seq = Rc::new(std::cell::Cell::new(None));
+    let synced = Rc::new(std::cell::Cell::new(false));
+    let _core_listener = core
+        .add_listener_local()
+        .error(|id, _, res, msg| tracing::debug!("playback: pipewire error on {id} ({res}): {msg}"))
+        .done({
+            let (quit_seq, synced) = (quit_seq.clone(), synced.clone());
+            move |id, seq| {
+                if id == pw::core::PW_ID_CORE && quit_seq.get() == Some(seq) {
+                    synced.set(true);
+                }
+            }
+        })
+        .register();
+
     let weak_loop = mainloop.downgrade();
     let ctl_stream = stream.clone();
     let _ctl = ctl_rx.attach(mainloop.loop_(), move |msg| {
@@ -248,6 +271,7 @@ fn run(
                 if let Err(e) = ctl_stream.set_active(active) {
                     tracing::warn!("playback set_active({active}): {e}");
                 }
+                duck(active);
             }
         };
         match msg {
@@ -272,6 +296,8 @@ fn run(
                 set_active(&mut st, false);
             }
             Control::Quit => {
+                duck(false);
+                quit_seq.set(core.sync(0).ok());
                 if let Some(l) = weak_loop.upgrade() {
                     l.quit();
                 }
@@ -281,5 +307,12 @@ fn run(
 
     let _ = ready.send(Ok(()));
     mainloop.run();
+    // Bounded, so a stuck server can't keep the daemon from exiting.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    while !synced.get() && std::time::Instant::now() < deadline {
+        let step = std::time::Duration::from_millis(20);
+        mainloop.loop_().iterate(pw::loop_::Timeout::Finite(step));
+    }
+    tracing::debug!("playback: quit (volumes synced: {})", synced.get());
     Ok(())
 }

@@ -143,22 +143,7 @@ fn run(
         })
         .register()?;
 
-    // Fixed format: PipeWire's adapter resamples and downmixes for us.
-    let mut info = spa::param::audio::AudioInfoRaw::new();
-    info.set_format(spa::param::audio::AudioFormat::F32LE);
-    info.set_rate(SAMPLE_RATE);
-    info.set_channels(1);
-    let format = spa::pod::serialize::PodSerializer::serialize(
-        std::io::Cursor::new(Vec::new()),
-        &spa::pod::Value::Object(spa::pod::Object {
-            type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
-            id: spa::param::ParamType::EnumFormat.as_raw(),
-            properties: info.into(),
-        }),
-    )
-    .expect("serialize audio format")
-    .0
-    .into_inner();
+    let format = crate::mono_f32_format(SAMPLE_RATE);
     let mut params = [Pod::from_bytes(&format).expect("audio format pod")];
 
     stream.connect(

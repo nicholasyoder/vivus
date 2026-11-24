@@ -87,6 +87,7 @@ impl Speaker {
             PlaybackOptions {
                 target: config.audio.output.clone(),
                 sample_rate: synth.sample_rate(),
+                duck: (config.audio.duck_volume < 1.0).then_some(config.audio.duck_volume.max(0.0)),
             },
             move || {
                 let _ = events.send(Command::SpeakingFinished);

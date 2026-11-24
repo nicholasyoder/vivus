@@ -44,6 +44,9 @@ pub struct Audio {
     /// Load PipeWire's echo canceller so the mic stays open while speaking
     /// (barge-in). It removes everything the output sink plays, music included.
     pub echo_cancel: bool,
+    /// Other apps' volume while speaking, relative to their own (0.3 is about
+    /// -10 dB); 1 leaves them alone.
+    pub duck_volume: f32,
 }
 
 impl Default for Audio {
@@ -53,6 +56,7 @@ impl Default for Audio {
             output: None,
             end_of_turn_silence: 0.4,
             echo_cancel: true,
+            duck_volume: 0.3,
         }
     }
 }

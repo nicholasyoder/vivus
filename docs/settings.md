@@ -43,7 +43,9 @@ As with `org.vivus.Assistant`, the methods only enqueue engine commands.
 (`Audio/Source`, later `Audio/Sink` for TTS playback) and tracks add/remove.
 Choosing a device sets `audio.input` / `audio.output` to the node name. "Default"
 means unset, which follows the system default. Our own echo-cancel nodes
-(`vivus-echo-cancel-*`) are hidden from the pickers. A level meter next to the input
+(`vivus-echo-cancel-*`) are hidden from the pickers. Speech volume sets the playback
+stream's volume (what a mixer shows, so the two agree); `duck_volume` is how far
+other apps go down while speaking. A level meter next to the input
 picker shows whether the mic is actually working.
 
 ## Roles and providers
