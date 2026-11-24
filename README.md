@@ -1,6 +1,6 @@
 # vivus
 
-A voice-driven assistant for Wayland desktops. See [PLAN.md](PLAN.md).
+A voice-driven assistant for Wayland desktops. See the [roadmap](docs/roadmap.md) for status and [docs/](docs/) for design.
 
 ## Layout
 

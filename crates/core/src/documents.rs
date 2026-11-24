@@ -1,4 +1,4 @@
-//! Sidebar documents. In-memory for now; persistence is an open question (PLAN.md §7).
+//! Sidebar documents. In-memory for now; persistence is an open question (docs/roadmap.md).
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
