@@ -28,6 +28,26 @@ pub struct Config {
     pub providers: BTreeMap<String, Provider>,
     #[serde(default)]
     pub roles: Roles,
+    #[serde(default)]
+    pub audio: Audio,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Audio {
+    /// PipeWire node to capture from, e.g. the echo-cancel source. Default source if unset.
+    pub input: Option<String>,
+    /// Seconds of silence that end an utterance in conversation mode.
+    pub end_of_turn_silence: f32,
+}
+
+impl Default for Audio {
+    fn default() -> Self {
+        Self {
+            input: None,
+            end_of_turn_silence: 0.4,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,6 +62,17 @@ pub enum Provider {
         #[serde(default = "default_claude_command")]
         command: String,
     },
+    /// Speech models run in-process via sherpa-onnx.
+    LocalSpeech {
+        /// Defaults to `~/.local/share/vivus/models`.
+        models_dir: Option<PathBuf>,
+        #[serde(default = "default_speech_threads")]
+        threads: i32,
+    },
+}
+
+fn default_speech_threads() -> i32 {
+    2
 }
 
 fn default_claude_command() -> String {

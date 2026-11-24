@@ -23,7 +23,7 @@ pub trait Assistant {
     fn toggle_sidebar(&self) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    fn transcript(&self, role: String, text: String) -> zbus::Result<()>;
+    fn transcript(&self, role: String, text: String, is_final: bool) -> zbus::Result<()>;
     #[zbus(signal)]
     fn sidebar_visibility_requested(&self, action: String) -> zbus::Result<()>;
 }

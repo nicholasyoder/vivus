@@ -132,13 +132,22 @@ The STT interface is streaming: audio frames go in, **partial** and **final** tr
 
 Local STT either uses a native streaming model or re-decodes the growing utterance every ~300 ms with an offline model ("simulated streaming", which sherpa-onnx has examples for). Re-decoding is cheap for the small models and keeps the final transcript only one short decode behind the end of speech.
 
-Model tiers (all through sherpa-onnx; exact choices to be benchmarked in Phase 1):
+Model tiers (all through sherpa-onnx):
 
 | Tier | STT | TTS | Target machine |
 |---|---|---|---|
-| Light | Moonshine (tiny/base) or a streaming Zipformer | Kitten TTS | Any laptop CPU |
-| Standard (default) | Parakeet TDT 0.6B (int8), simulated streaming | Kokoro (82M) | 4+ cores, no GPU |
+| Light (default) | `parakeet-tdt-110m` (int8, ~130 MB): re-decoded, adds punctuation | Kitten TTS | Any laptop CPU |
+| Standard | `nemotron-streaming-0.6b` (int8, 160 ms chunks, ~650 MB): native streaming | Kokoro (82M) | 4+ cores, no GPU |
 | Remote | Groq Whisper (final only), Deepgram (streaming) | Cloud TTS | Anything with a network |
+
+Measured on the dev machine (Ryzen, 16 cores; `stt_bench`, 2 threads; "final" is end of speech to final text):
+
+| Model | Compute / audio time | Final, 6.6 s utterance | Final, 16.7 s utterance |
+|---|---|---|---|
+| parakeet-tdt-110m | 0.20–0.48 (grows with length) | 110 ms | 290 ms |
+| nemotron-streaming-0.6b | 0.47 (flat) | ~0 ms | ~0 ms |
+
+Both transcribe the test clips correctly. Re-decoding costs more the longer you speak, but typical commands are short; Nemotron's cost is flat but higher overall. Benchmark a slow laptop before settling the default.
 
 Barge-in (interrupting by talking) needs VAD and STT running during playback, which depends on echo cancellation. Keeping speech local means that always-on listening costs no network round trips.
 

@@ -1,0 +1,11 @@
+[package]
+name = "vivus-speech"
+description = "Local speech models via sherpa-onnx: VAD, STT, TTS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sherpa-onnx = "2.0.3"
+thiserror.workspace = true

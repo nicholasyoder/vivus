@@ -1,5 +1,6 @@
 /* Default vivus-sidebar style. Copy to ~/.config/vivus/sidebar.qss to customize.
-   Selectors: #VivusSidebar, #StateDot, #StateLabel, #History, #Document, #Input, #TalkButton.
+   Selectors: #VivusSidebar, #StateDot, #StateLabel, #History, #Document,
+   #Transcript, #Input, #TalkButton.
    #VivusSidebar and #StateDot carry a `state` property:
    idle | listening | thinking | speaking | disconnected. */
 
@@ -24,6 +25,15 @@
     background: palette(base);
     border-radius: 8px;
     padding: 8px;
+}
+
+/* Live transcript of what you're saying; `is-final` is false while recognizing. */
+#Transcript {
+    padding: 4px 2px;
+}
+#Transcript[is-final="false"] {
+    color: palette(placeholder-text);
+    font-style: italic;
 }
 
 #Input {

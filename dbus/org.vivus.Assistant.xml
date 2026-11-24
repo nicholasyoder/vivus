@@ -21,10 +21,12 @@
     <!-- Interrupt: cancels in-flight TTS, LLM streams and tool calls. -->
     <method name="Cancel"/>
 
-    <!-- role: user | assistant -->
+    <!-- role: user | assistant. Partial (is_final=false) user text updates live
+         while speaking; each utterance ends with one is_final=true. -->
     <signal name="Transcript">
       <arg name="role" type="s"/>
       <arg name="text" type="s"/>
+      <arg name="is_final" type="b"/>
     </signal>
 
     <!-- Asks UIs to show, hide or toggle the sidebar. -->

@@ -39,6 +39,12 @@ SidebarWindow::SidebarWindow(DaemonClient *client, QWidget *parent)
     m_document->setOpenExternalLinks(true);
     m_document->setFrameShape(QFrame::NoFrame);
 
+    m_transcript = new QLabel(this);
+    m_transcript->setObjectName(QStringLiteral("Transcript"));
+    m_transcript->setWordWrap(true);
+    m_transcript->setTextFormat(Qt::PlainText);
+    m_transcript->hide();
+
     m_input = new QLineEdit(this);
     m_input->setObjectName(QStringLiteral("Input"));
     m_input->setPlaceholderText(tr("Ask…"));
@@ -59,6 +65,7 @@ SidebarWindow::SidebarWindow(DaemonClient *client, QWidget *parent)
     layout->setSpacing(8);
     layout->addLayout(header);
     layout->addWidget(m_document, 1);
+    layout->addWidget(m_transcript);
     layout->addLayout(footer);
 
     connect(m_history, &QComboBox::activated, m_client, &DaemonClient::selectDocument);
@@ -73,6 +80,7 @@ SidebarWindow::SidebarWindow(DaemonClient *client, QWidget *parent)
     connect(m_client, &DaemonClient::documentsChanged, this, &SidebarWindow::updateDocuments);
     connect(m_client, &DaemonClient::currentChanged, this, &SidebarWindow::updateCurrent);
     connect(m_client, &DaemonClient::visibilityRequested, this, &SidebarWindow::handleVisibilityRequest);
+    connect(m_client, &DaemonClient::transcript, this, &SidebarWindow::showTranscript);
 
     updateState();
     updateDocuments();
@@ -133,6 +141,19 @@ void SidebarWindow::updateCurrent()
         m_history->setCurrentIndex(m_client->currentIndex());
     }
     m_document->setMarkdown(m_client->currentMarkdown());
+}
+
+// Shows what you're saying, live. Assistant replies go to TTS and documents, not here.
+void SidebarWindow::showTranscript(const QString &role, const QString &text, bool isFinal)
+{
+    if (role != QLatin1String("user"))
+        return;
+    m_transcript->setVisible(!text.isEmpty());
+    m_transcript->setText(text);
+    // For QSS: #Transcript[is-final="false"] styles text still being recognized.
+    m_transcript->setProperty("is-final", isFinal);
+    m_transcript->style()->unpolish(m_transcript);
+    m_transcript->style()->polish(m_transcript);
 }
 
 void SidebarWindow::handleVisibilityRequest(const QString &action)

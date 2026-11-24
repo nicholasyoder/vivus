@@ -25,12 +25,14 @@ private:
     void updateDocuments();
     void updateCurrent();
     void handleVisibilityRequest(const QString &action);
+    void showTranscript(const QString &role, const QString &text, bool isFinal);
 
     DaemonClient *m_client;
     QLabel *m_stateDot;
     QLabel *m_stateLabel;
     QComboBox *m_history;
     QTextBrowser *m_document;
+    QLabel *m_transcript;
     QLineEdit *m_input;
     QPushButton *m_talk;
 };

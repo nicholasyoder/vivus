@@ -18,6 +18,8 @@ DaemonClient::DaemonClient(QObject *parent)
 
     connect(m_assistant, &OrgVivusAssistantInterface::SidebarVisibilityRequested,
             this, &DaemonClient::visibilityRequested);
+    connect(m_assistant, &OrgVivusAssistantInterface::Transcript,
+            this, &DaemonClient::transcript);
     connect(m_documents, &OrgVivusDocumentsInterface::DocumentChanged,
             this, &DaemonClient::onDocumentChanged);
     bus.connect(Service, Path, QStringLiteral("org.freedesktop.DBus.Properties"),

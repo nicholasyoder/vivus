@@ -38,6 +38,8 @@ signals:
     void currentChanged();
     // show | hide | toggle
     void visibilityRequested(const QString &action);
+    // role: user | assistant. User text arrives as partials, then one final.
+    void transcript(const QString &role, const QString &text, bool isFinal);
 
 private slots:
     void onPropertiesChanged(const QString &iface, const QVariantMap &changed, const QStringList &invalidated);

@@ -61,8 +61,12 @@ impl Assistant {
     }
 
     #[zbus(signal)]
-    pub async fn transcript(emitter: &SignalEmitter<'_>, role: &str, text: &str)
-    -> zbus::Result<()>;
+    pub async fn transcript(
+        emitter: &SignalEmitter<'_>,
+        role: &str,
+        text: &str,
+        is_final: bool,
+    ) -> zbus::Result<()>;
 
     #[zbus(signal)]
     pub async fn sidebar_visibility_requested(

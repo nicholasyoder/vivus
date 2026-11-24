@@ -10,7 +10,9 @@ rust-version = "1.85"
 
 [workspace.dependencies]
 vivus-core = { path = "crates/core" }
+vivus-audio = { path = "crates/audio" }
 vivus-dbus = { path = "crates/dbus" }
+vivus-speech = { path = "crates/speech" }
 
 anyhow = "1"
 thiserror = "2"
