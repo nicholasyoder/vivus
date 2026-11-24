@@ -116,8 +116,7 @@ follow-up's content, or say a canned line ("I've put that in the sidebar").
   last round sets `tool_choice: none`. If still nothing was said: "I've put
   that in the sidebar" after a `show`, else an apology. Provider errors are
   spoken as "couldn't reach the language model".
-- `escalate` is a stub until the [answer/agent roles](#roles) land: the model
-  is told it isn't available and says so.
+- `escalate` ends the router's call; see [Escalation](#escalation).
 - `max_tokens = 1000` (Groq free tier limit). No conversation history or
   context (time, active window) yet; those are their own roadmap items.
 
@@ -130,8 +129,46 @@ follow-up's content, or say a canned line ("I've put that in the sidebar").
 | "latest news about AI" | silent `escalate`, then follow-up | 1.10 s | 0.71 s |
 
 gpt-oss-20b still calls tools without a spoken line first despite the prompt
-and examples, so the follow-up round costs about 0.5 s. For `escalate`, a canned
-filler spoken at once would be faster than waiting for a follow-up.
+and examples, so the follow-up round costs about 0.5 s. For `escalate` this is
+now a canned filler instead ([Escalation](#escalation)).
+
+### Escalation
+
+- A valid `escalate(role, task)` ends the router's call with no follow-up round.
+  If the router hasn't spoken, a canned filler is said at once ("Let me look
+  into that." for `answer`, "On it." for `agent`, rotating through a few).
+- `agent` falls back to `answer` when unset; with neither configured, an
+  apology is spoken and no filler. A role that fails to build (missing key) is
+  logged and treated as unset, so the router still works.
+- The escalated role gets `The user said: "…"\nTask: …`.
+- **OpenAI-compatible** `answer`/`agent`: the same speech-plus-`show` loop as the
+  router, with a prompt that skips the filler and admits it has no web access
+  yet, only `show` as a tool, and no `max_tokens`.
+- **Claude Code** (`crates/inference/src/claude_code.rs`): `claude -p
+  --output-format stream-json --verbose [--model M] --append-system-prompt …`
+  plus the provider's `args`, prompt on stdin, run in `$HOME`, killed on drop
+  (cancel). Headless runs can't ask for permission, so the provider's `args`
+  allow tools (default `--allowedTools WebSearch,WebFetch`). The final `result`
+  is split: the first paragraph is spoken, the rest becomes a sidebar document
+  (titled by its heading, else the task). If the first paragraph looks like
+  markdown or runs over 400 characters, all of it goes to the sidebar.
+
+Live run (2026-11-24; router gpt-oss-20b on Groq, `answer` DeepSeek v4.1 flash
+on nano-gpt, `agent` Claude Code with its default model):
+
+| Request | Route | Filler | Answer |
+|---|---|---|---|
+| "latest news about AI this week" | `answer` | 0.61 s | first text 3.3 s; says it has no web access, tips in the sidebar |
+| "research reviews … best robot vacuum under \$300" | `agent` | 0.68 s | 32 s, five web searches, \$0.47; spoken pick, sourced sidebar document |
+
+- gpt-oss-20b sent "check which Rust toolchains are installed" to `answer`, and
+  answered "compare Rust web frameworks, with sources" itself with made-up
+  numbers. A rule saying what `agent` is for, plus an example, got the vacuum request
+  routed right; small routers will still guess wrong sometimes.
+- Claude Code's default model is costly for voice requests; set
+  `model = "sonnet"` (or similar) on `[roles.agent]`.
+- The state stays `speaking` from the filler until the escalated reply ends,
+  and a long agent run is silent after the filler.
 
 ## Web access
 

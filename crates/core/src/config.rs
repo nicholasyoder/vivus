@@ -65,6 +65,10 @@ pub enum Provider {
     ClaudeCode {
         #[serde(default = "default_claude_command")]
         command: String,
+        /// Appended after `-p --output-format stream-json`. Headless runs can't
+        /// ask for permission, so this is where tools get allowed.
+        #[serde(default = "default_claude_args")]
+        args: Vec<String>,
     },
     /// Speech models run in-process via sherpa-onnx.
     LocalSpeech {
@@ -81,6 +85,10 @@ fn default_speech_threads() -> i32 {
 
 fn default_claude_command() -> String {
     "claude".into()
+}
+
+fn default_claude_args() -> Vec<String> {
+    vec!["--allowedTools".into(), "WebSearch,WebFetch".into()]
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -1,15 +1,20 @@
 //! The router: one streaming call per request. Its text content is the spoken
-//! reply; `show` puts material in the sidebar, `escalate` hands off (stubbed
-//! until the answer/agent roles land). See docs/inference.md#routing.
+//! reply; `show` puts material in the sidebar, `escalate` hands the request to
+//! the `answer` or `agent` role. See docs/inference.md#routing.
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use serde::Deserialize;
 use serde_json::json;
+use vivus_core::config::Provider;
 use vivus_core::{Config, Document};
-use vivus_inference::{ChatRequest, Client, Event, Message, Tool, ToolCall, ToolChoice};
+use vivus_inference::{
+    ChatRequest, ClaudeCode, ClaudeEvent, ClaudeRequest, Client, Event, Message, Tool, ToolCall,
+    ToolChoice,
+};
 
 use crate::engine::Shared;
 
@@ -34,7 +39,10 @@ before calling it. Never call `show` without saying something first.
 - Never read code, URLs or long numbers aloud; put them in the sidebar.
 - If the request needs current information, research, more care than a quick \
 answer, or actions on the computer you have no tool for, first say a short filler \
-line (\"Let me look into that.\"), then call `escalate`.
+line (\"Let me look into that.\"), then call `escalate`. Role `answer` is for \
+questions: explanations, knowledge, the news. Role `agent` is for tasks with several \
+steps: research that compares sources, anything on this computer (files, programs, \
+settings), or doing something rather than saying something.
 
 Examples:
 User: what's the capital of Australia
@@ -43,11 +51,71 @@ User: give me a packing list for a weekend hike
 Assistant: I've put a weekend hiking packing list in the sidebar. \
 [calls show with title \"Weekend hike packing list\" and the list as markdown]
 User: what's the latest news about AI
-Assistant: Let me look that up. [calls escalate with role \"answer\"]";
+Assistant: Let me look that up. [calls escalate with role \"answer\"]
+User: compare the three best-reviewed budget mechanical keyboards
+Assistant: On it. [calls escalate with role \"agent\"]";
+
+/// For an OpenAI-compatible `answer` or `agent` role.
+const ESCALATED_SYSTEM: &str = "\
+You are Vivus, a voice assistant on the user's Linux desktop. A quicker model \
+handed this request to you and has already told the user it's working on it, so \
+don't open with a filler line. Your text reply is spoken aloud by a speech \
+synthesizer, and a sidebar next to it can show documents.
+
+- Speak one or two short, natural sentences: no markdown, lists, emoji, URLs or \
+code; numbers, times, dates and symbols written as words.
+- Put detail (lists, steps, code, links, tables, anything longer) in the sidebar \
+with `show`, and say a one-sentence spoken summary before calling it.
+- You have no web access or tools on the computer yet. If the request needs \
+current information you don't have, say so briefly rather than guessing.";
+
+/// Appended to Claude Code's system prompt.
+const CLAUDE_SYSTEM: &str = "\
+You are the agent behind Vivus, a voice assistant on the user's Linux desktop. \
+The user spoke this request and has already been told you're on it. Your final \
+message is split: its first paragraph is read aloud by a speech synthesizer, and \
+everything after the first blank line goes to a sidebar as markdown. So start the \
+final message with one or two plain spoken sentences (no markdown, URLs or code; \
+numbers and symbols as words), then a blank line, then the full detail as \
+markdown if there is any, with sources as links.";
+
+/// Spoken at once when the router escalates without saying anything first.
+const ANSWER_FILLERS: &[&str] = &["Let me look into that.", "One moment.", "Let me check."];
+const AGENT_FILLERS: &[&str] = &["On it.", "Working on it.", "Sure, give me a moment."];
+
+/// A role the router can hand a request to.
+pub enum Backend {
+    Chat { client: Client, model: String },
+    ClaudeCode { cc: ClaudeCode, model: Option<String> },
+}
+
+impl Backend {
+    fn from_config(config: &Config, name: &str) -> anyhow::Result<Option<Self>> {
+        let Some((_, role)) = config.roles.iter().find(|(n, _)| *n == name) else {
+            return Ok(None);
+        };
+        let provider = &config.providers[&role.provider];
+        let backend = match provider {
+            Provider::ClaudeCode { .. } => Backend::ClaudeCode {
+                cc: ClaudeCode::from_provider(provider)?,
+                model: role.model.clone(),
+            },
+            _ => Backend::Chat {
+                client: Client::from_provider(provider)?,
+                model: role.model.clone().context("no model")?,
+            },
+        };
+        Ok(Some(backend))
+    }
+}
 
 pub struct Router {
     client: Client,
     model: String,
+    answer: Option<Backend>,
+    /// Falls back to `answer` when unset.
+    agent: Option<Backend>,
+    fillers: AtomicUsize,
 }
 
 /// What a reply produces, in order; always ends with `Done`.
@@ -65,6 +133,9 @@ impl Router {
         Self {
             client,
             model: model.into(),
+            answer: None,
+            agent: None,
+            fillers: AtomicUsize::new(0),
         }
     }
 
@@ -78,7 +149,19 @@ impl Router {
         let provider = &config.providers[&role.provider];
         let client = Client::from_provider(provider)
             .with_context(|| format!("router provider `{}`", role.provider))?;
-        Ok(Self::new(client, model))
+        let mut router = Self::new(client, model);
+        // A broken escalation role shouldn't take the router down with it.
+        for name in ["answer", "agent"] {
+            let backend = Backend::from_config(config, name).unwrap_or_else(|e| {
+                tracing::error!("[roles.{name}] unavailable: {e:#}");
+                None
+            });
+            match name {
+                "answer" => router.answer = backend,
+                _ => router.agent = backend,
+            }
+        }
+        Ok(router)
     }
 
     /// Answers one request. Dropping the future cancels the call in flight.
@@ -93,43 +176,63 @@ impl Router {
             shared,
             emit: &emit,
             spoken: false,
+            answered: false,
             shown: false,
+            start,
         };
-        if let Err(e) = self.run(text, &mut turn, start).await {
-            tracing::error!("router: {e:#}");
-            turn.say(" Sorry, I couldn't reach the language model.");
+        let messages = vec![Message::System(SYSTEM.into()), Message::User(text.into())];
+        let result = match self
+            .converse(&self.client, &self.model, messages, tools(), Some(MAX_TOKENS), &mut turn)
+            .await
+        {
+            Ok(Some(esc)) => self.escalate(text, esc, &mut turn).await,
+            Ok(None) => Ok(()),
+            Err(e) => Err(e),
+        };
+        if let Err(e) = result {
+            tracing::error!("reply: {e:#}");
+            turn.say_sentence("Sorry, I couldn't reach the language model.");
         }
-        if !turn.spoken {
+        if !turn.answered {
             // Models sometimes call `show` and say nothing despite the prompt.
-            turn.say(if turn.shown {
+            turn.say_sentence(if turn.shown {
                 "I've put that in the sidebar."
             } else {
                 "Sorry, I don't have an answer for that."
             });
         }
-        tracing::info!("router: reply done in {:.2} s", start.elapsed().as_secs_f64());
+        tracing::info!("reply done in {:.2} s", start.elapsed().as_secs_f64());
         emit(ReplyEvent::Done);
     }
 
-    async fn run(&self, text: &str, turn: &mut Turn<'_>, start: Instant) -> anyhow::Result<()> {
-        let mut messages = vec![Message::System(SYSTEM.into()), Message::User(text.into())];
+    /// Streams content into speech and runs tools, for up to `MAX_ROUNDS` calls.
+    /// Stops early with the arguments of a valid `escalate` call.
+    async fn converse(
+        &self,
+        client: &Client,
+        model: &str,
+        mut messages: Vec<Message>,
+        tools: Vec<Tool>,
+        max_tokens: Option<u32>,
+        turn: &mut Turn<'_>,
+    ) -> anyhow::Result<Option<EscalateArgs>> {
         for round in 0..MAX_ROUNDS {
-            let mut req = ChatRequest::new(&self.model, messages.clone());
-            req.tools = tools();
-            req.max_tokens = Some(MAX_TOKENS);
+            let mut req = ChatRequest::new(model, messages.clone());
+            req.tools = tools.clone();
+            req.max_tokens = max_tokens;
             if round + 1 == MAX_ROUNDS {
                 req.tool_choice = Some(ToolChoice::None);
             }
-            let mut stream = self.client.chat(&req).await?;
+            let mut stream = client.chat(&req).await?;
             let mut reply = None;
             let mut separated = !turn.spoken;
             while let Some(ev) = stream.next().await {
                 match ev? {
                     Event::Text(t) => {
-                        if !turn.spoken && !t.trim().is_empty() {
+                        if !turn.answered && !t.trim().is_empty() {
                             tracing::info!(
-                                "router: first text after {:.2} s",
-                                start.elapsed().as_secs_f64()
+                                "{model}: first text after {:.2} s",
+                                turn.start.elapsed().as_secs_f64()
                             );
                         }
                         // Keep a follow-up's first sentence from running into the last one.
@@ -145,20 +248,101 @@ impl Router {
             }
             let reply = reply.context("stream ended without a reply")?;
             if reply.tool_calls.is_empty() {
-                return Ok(());
+                return Ok(None);
             }
             messages.push(Message::from(&reply));
-            let mut follow_up = !turn.spoken;
+            let mut follow_up = !turn.answered;
+            let mut escalation = None;
             for call in &reply.tool_calls {
-                let (result, needs_answer) = turn.tool(call);
+                let (result, needs_answer) = match call.name.as_str() {
+                    "escalate" => match call.parse_args::<EscalateArgs>() {
+                        Ok(args) => {
+                            escalation = Some(args);
+                            ("Handed off.".into(), false)
+                        }
+                        Err(e) => (format!("Invalid arguments: {e}"), true),
+                    },
+                    _ => turn.tool(call),
+                };
                 follow_up |= needs_answer;
                 messages.push(Message::Tool {
                     tool_call_id: call.id.clone(),
                     content: result,
                 });
             }
+            if escalation.is_some() {
+                return Ok(escalation);
+            }
             if !follow_up {
-                return Ok(());
+                return Ok(None);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Hands the request to `answer` or `agent`, after a filler line if the
+    /// router hasn't said anything yet.
+    async fn escalate(
+        &self,
+        text: &str,
+        esc: EscalateArgs,
+        turn: &mut Turn<'_>,
+    ) -> anyhow::Result<()> {
+        let agent = esc.role == "agent";
+        let backend = if agent {
+            self.agent.as_ref().or(self.answer.as_ref())
+        } else {
+            self.answer.as_ref()
+        };
+        tracing::info!("escalating to {}: {}", esc.role, esc.task);
+        let Some(backend) = backend else {
+            tracing::warn!("no [roles.{}] configured", esc.role);
+            turn.say_sentence("Sorry, I can't do that yet: no model is set up for it.");
+            turn.answered = true;
+            return Ok(());
+        };
+        if !turn.answered {
+            let fillers = if agent { AGENT_FILLERS } else { ANSWER_FILLERS };
+            let i = self.fillers.fetch_add(1, Ordering::Relaxed) % fillers.len();
+            turn.say_sentence(fillers[i]);
+        }
+        // From here on, only the escalated role's words count as the answer.
+        turn.answered = false;
+        let prompt = format!("The user said: \"{text}\"\nTask: {}", esc.task);
+        match backend {
+            Backend::Chat { client, model } => {
+                let messages = vec![
+                    Message::System(ESCALATED_SYSTEM.into()),
+                    Message::User(prompt),
+                ];
+                // No `escalate` here, so a call to it gets "unknown tool".
+                self.converse(client, model, messages, vec![show_tool()], None, turn)
+                    .await?;
+            }
+            Backend::ClaudeCode { cc, model } => {
+                let req = ClaudeRequest {
+                    prompt,
+                    system: Some(CLAUDE_SYSTEM.into()),
+                    model: model.clone(),
+                };
+                let mut run = cc.run(&req).await?;
+                while let Some(ev) = run.next().await {
+                    match ev? {
+                        ClaudeEvent::ToolUse { name } => tracing::info!("claude: tool {name}"),
+                        ClaudeEvent::Text(_) => {}
+                        ClaudeEvent::Result(r) => {
+                            tracing::info!(
+                                "claude: done after {:.1} s, ${:.4}",
+                                turn.start.elapsed().as_secs_f64(),
+                                r.cost_usd.unwrap_or(0.0)
+                            );
+                            if r.is_error {
+                                bail!("Claude Code: {}", r.text);
+                            }
+                            turn.deliver(&r.text, &esc.task);
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -170,7 +354,10 @@ struct Turn<'a> {
     emit: &'a (dyn Fn(ReplyEvent) + Sync),
     /// Some non-blank text has been emitted.
     spoken: bool,
+    /// The current responder (router, or the role it escalated to) has said something.
+    answered: bool,
     shown: bool,
+    start: Instant,
 }
 
 #[derive(Deserialize)]
@@ -184,7 +371,7 @@ struct ShowArgs {
     append: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct EscalateArgs {
     role: String,
     task: String,
@@ -197,33 +384,55 @@ impl Turn<'_> {
         }
         if !text.trim().is_empty() {
             self.spoken = true;
+            self.answered = true;
         }
         (self.emit)(ReplyEvent::Text(text.into()));
     }
 
-    /// Runs a tool call; returns its result and whether the model must answer it.
+    /// A whole sentence, separated from anything said before it.
+    fn say_sentence(&mut self, text: &str) {
+        if self.spoken {
+            self.say(" ");
+        }
+        self.say(text);
+    }
+
+    /// Speaks the first paragraph of a finished answer and shows the rest.
+    fn deliver(&mut self, text: &str, task: &str) {
+        let text = text.trim();
+        let (first, rest) = text.split_once("\n\n").unwrap_or((text, ""));
+        let first = first.trim();
+        let markdown_first = first.starts_with(['#', '-', '*', '`', '|', '>'])
+            || first.split_once(". ").is_some_and(|(n, _)| n.parse::<u32>().is_ok());
+        // Ignored the format: show it all and let the caller's fallback speak.
+        let (spoken, detail) = if markdown_first || first.len() > 400 {
+            ("", text)
+        } else {
+            (first, rest.trim())
+        };
+        if !detail.is_empty() {
+            let title = heading(detail).unwrap_or_else(|| short_title(task));
+            self.show(ShowArgs {
+                title: Some(title),
+                markdown: detail.into(),
+                document_id: None,
+                append: false,
+            });
+        }
+        if !spoken.is_empty() {
+            self.say_sentence(spoken);
+        }
+    }
+
+    /// Runs a `show` (or unknown) tool call; returns its result and whether
+    /// the model must answer it.
     fn tool(&mut self, call: &ToolCall) -> (String, bool) {
-        tracing::info!("router: tool {} {}", call.name, call.arguments);
+        tracing::info!("tool {} {}", call.name, call.arguments);
         match call.name.as_str() {
             "show" => match call.parse_args::<ShowArgs>() {
                 Ok(args) => {
-                    let doc = self.show(args);
-                    let result = format!("Shown in the sidebar as document {}.", doc.id);
-                    (self.emit)(ReplyEvent::Document(doc));
-                    self.shown = true;
-                    (result, false)
-                }
-                Err(e) => (format!("Invalid arguments: {e}"), true),
-            },
-            "escalate" => match call.parse_args::<EscalateArgs>() {
-                Ok(args) => {
-                    tracing::warn!("router: escalation to {} not implemented: {}", args.role, args.task);
-                    (
-                        "Escalation isn't available yet. In one short sentence, tell the user \
-                         you can't do that yet."
-                            .into(),
-                        true,
-                    )
+                    let id = self.show(args);
+                    (format!("Shown in the sidebar as document {id}."), false)
                 }
                 Err(e) => (format!("Invalid arguments: {e}"), true),
             },
@@ -231,50 +440,74 @@ impl Turn<'_> {
         }
     }
 
-    fn show(&self, args: ShowArgs) -> Document {
-        let mut shared = self.shared.lock().unwrap();
-        let docs = &mut shared.documents;
-        let existing = args.document_id.as_deref().filter(|id| docs.get(id).is_some());
-        let doc = match existing {
-            Some(id) if args.append => docs.append(id, &format!("\n\n{}", args.markdown)),
-            Some(id) => docs.replace(id, args.markdown),
-            None => {
-                let title = args
-                    .title
-                    .filter(|t| !t.trim().is_empty())
-                    .unwrap_or_else(|| title_from(&args.markdown));
-                Some(docs.create(title, args.markdown))
-            }
+    /// Creates or changes a document and emits it; returns its id.
+    fn show(&mut self, args: ShowArgs) -> String {
+        let doc = {
+            let mut shared = self.shared.lock().unwrap();
+            let docs = &mut shared.documents;
+            let existing = args.document_id.as_deref().filter(|id| docs.get(id).is_some());
+            let doc = match existing {
+                Some(id) if args.append => docs.append(id, &format!("\n\n{}", args.markdown)),
+                Some(id) => docs.replace(id, args.markdown),
+                None => {
+                    let title = args
+                        .title
+                        .filter(|t| !t.trim().is_empty())
+                        .unwrap_or_else(|| title_from(&args.markdown));
+                    Some(docs.create(title, args.markdown))
+                }
+            };
+            doc.expect("document exists").clone()
         };
-        doc.expect("document exists").clone()
+        let id = doc.id.clone();
+        (self.emit)(ReplyEvent::Document(doc));
+        self.shown = true;
+        id
     }
 }
 
 /// The first heading or line, for documents the model didn't title.
 fn title_from(markdown: &str) -> String {
-    let line = markdown.lines().find(|l| !l.trim().is_empty()).unwrap_or("Document");
-    line.trim_start_matches('#').trim().chars().take(80).collect()
+    heading(markdown).unwrap_or_else(|| {
+        let line = markdown.lines().find(|l| !l.trim().is_empty()).unwrap_or("Document");
+        short_title(line)
+    })
+}
+
+/// The first line, if it's a heading.
+fn heading(markdown: &str) -> Option<String> {
+    let line = markdown.lines().find(|l| !l.trim().is_empty())?.trim();
+    line.starts_with('#')
+        .then(|| short_title(line.trim_start_matches('#')))
+}
+
+fn short_title(text: &str) -> String {
+    text.trim().chars().take(80).collect()
+}
+
+fn show_tool() -> Tool {
+    Tool {
+        name: "show".into(),
+        description: "Show a markdown document in the sidebar: lists, steps, code, \
+                      links, tables or anything longer than two sentences. Say a \
+                      one-sentence spoken summary as well."
+            .into(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Short document title."},
+                "markdown": {"type": "string"},
+                "document_id": {"type": "string", "description": "Existing document to change; omit for a new one."},
+                "append": {"type": "boolean", "description": "With document_id: append instead of replacing."}
+            },
+            "required": ["markdown"]
+        }),
+    }
 }
 
 fn tools() -> Vec<Tool> {
     vec![
-        Tool {
-            name: "show".into(),
-            description: "Show a markdown document in the sidebar: lists, steps, code, \
-                          links, tables or anything longer than two sentences. Say a \
-                          one-sentence spoken summary as well."
-                .into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Short document title."},
-                    "markdown": {"type": "string"},
-                    "document_id": {"type": "string", "description": "Existing document to change; omit for a new one."},
-                    "append": {"type": "boolean", "description": "With document_id: append instead of replacing."}
-                },
-                "required": ["markdown"]
-            }),
-        },
+        show_tool(),
         Tool {
             name: "escalate".into(),
             description: "Hand the request to a stronger model. `answer` for knowledge, \
@@ -416,15 +649,117 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn escalation_stub_answers_after_the_filler() {
-        let (router, _) = serve(vec![
-            vec![text("Let me check."), call("escalate", json!({"role":"answer","task":"news"}))],
-            vec![text("I can't do that yet.")],
+    async fn silent_escalation_says_a_filler_then_the_answer() {
+        let (mut router, requests) = serve(vec![
+            vec![call("escalate", json!({"role":"answer","task":"AI news"}))],
+            vec![text("Nothing big today.")],
         ])
+        .await;
+        router.answer = Some(Backend::Chat {
+            client: router.client.clone(),
+            model: "big".into(),
+        });
+        let shared = Mutex::new(Shared::default());
+        let events = respond(&router, &shared).await;
+
+        assert_eq!(spoken(&events), "Let me look into that. Nothing big today.");
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        let second: serde_json::Value = serde_json::from_str(&requests[1]).unwrap();
+        assert_eq!(second["model"], "big");
+        assert!(second["messages"][1]["content"].as_str().unwrap().contains("Task: AI news"));
+        let tools: Vec<_> = second["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["function"]["name"].clone())
+            .collect();
+        assert_eq!(tools, vec![json!("show")]);
+        assert!(second.get("max_tokens").is_none());
+    }
+
+    #[tokio::test]
+    async fn spoken_filler_is_not_doubled() {
+        let (mut router, _) = serve(vec![
+            vec![text("Let me check."), call("escalate", json!({"role":"agent","task":"t"}))],
+            vec![call("show", json!({"markdown":"# Result\n- x"}))],
+            vec![text("It's in the sidebar.")],
+        ])
+        .await;
+        // No agent: falls back to answer.
+        router.answer = Some(Backend::Chat {
+            client: router.client.clone(),
+            model: "big".into(),
+        });
+        let shared = Mutex::new(Shared::default());
+        let events = respond(&router, &shared).await;
+        // The answer role showed silently, so it got a follow-up round.
+        assert_eq!(spoken(&events), "Let me check. It's in the sidebar.");
+        assert!(shared.lock().unwrap().documents.get("doc-1").is_some());
+    }
+
+    #[tokio::test]
+    async fn escalation_without_a_role_apologises_without_filler() {
+        let (router, requests) = serve(vec![vec![call(
+            "escalate",
+            json!({"role":"answer","task":"news"}),
+        )]])
         .await;
         let shared = Mutex::new(Shared::default());
         let events = respond(&router, &shared).await;
-        assert_eq!(spoken(&events), "Let me check. I can't do that yet.");
+        assert_eq!(spoken(&events), "Sorry, I can't do that yet: no model is set up for it.");
+        assert_eq!(requests.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn claude_code_result_is_spoken_and_shown() {
+        use std::os::unix::fs::PermissionsExt;
+        let (mut router, _) = serve(vec![vec![call(
+            "escalate",
+            json!({"role":"agent","task":"research X"}),
+        )]])
+        .await;
+        let path = std::env::temp_dir().join(format!("vivus-router-claude-{}", std::process::id()));
+        let result = json!({"type":"result","subtype":"success","is_error":false,
+            "result":"X is a thing.\n\n## About X\n- [source](https://x.example)"});
+        std::fs::write(&path, format!("#!/bin/sh\ncat >/dev/null\necho '{result}'\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        router.agent = Some(Backend::ClaudeCode {
+            cc: ClaudeCode::new(path.to_str().unwrap(), vec![]),
+            model: None,
+        });
+        let shared = Mutex::new(Shared::default());
+        let events = respond(&router, &shared).await;
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(spoken(&events), "On it. X is a thing.");
+        let shared = shared.lock().unwrap();
+        let doc = shared.documents.get("doc-1").unwrap();
+        assert_eq!(doc.title, "About X");
+        assert!(doc.markdown.starts_with("## About X"));
+    }
+
+    #[test]
+    fn deliver_shows_markdown_only_answers_whole() {
+        let shared = Mutex::new(Shared::default());
+        let events = Mutex::new(Vec::new());
+        let emit = |e| events.lock().unwrap().push(e);
+        let mut turn = Turn {
+            shared: &shared,
+            emit: &emit,
+            spoken: false,
+            answered: false,
+            shown: false,
+            start: Instant::now(),
+        };
+        turn.deliver("- a\n- b\n\nmore", "List things");
+        assert!(!turn.answered);
+        let shared = shared.lock().unwrap();
+        let doc = shared.documents.get("doc-1").unwrap();
+        assert_eq!(
+            (doc.title.as_str(), doc.markdown.as_str()),
+            ("List things", "- a\n- b\n\nmore")
+        );
     }
 
     #[tokio::test]
