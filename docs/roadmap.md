@@ -25,7 +25,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] Router: one streaming call; content is speech and streams into TTS; `show` / `escalate` tools; the speech-vs-sidebar rules (numbers as words until normalization lands) (2026-11-24, `cabb729`) — [inference.md](inference.md#routing)
 - [x] Escalation to `answer` and `agent`, including the Claude Code provider; canned filler when the router escalates silently (2026-11-24, `0e169fb`) — [inference.md](inference.md#escalation)
 
-### 1b: Speaking well ← current
+### 1b: Speaking well
 
 - [ ] TTS text normalization: numbers, times, dates, units, currency, acronyms, abbreviations, URLs (all dropped today); log remaining OOV words — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] Own phonemizer: lexicon lookup in Rust, `phoneme_codepoints` to sherpa; ARPAbet pronunciation file (learned + user entries) converted per model — [speech.md](speech.md#out-of-lexicon-words)
