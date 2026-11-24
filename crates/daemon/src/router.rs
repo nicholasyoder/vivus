@@ -125,6 +125,8 @@ pub enum ReplyEvent {
     Text(String),
     /// A sidebar document was created or changed.
     Document(Document),
+    /// More text may be a while: speak what's buffered (e.g. the filler) now.
+    Flush,
     Done,
 }
 
@@ -247,6 +249,7 @@ impl Router {
                 }
             }
             let reply = reply.context("stream ended without a reply")?;
+            turn.flush();
             if reply.tool_calls.is_empty() {
                 return Ok(None);
             }
@@ -306,6 +309,7 @@ impl Router {
             let i = self.fillers.fetch_add(1, Ordering::Relaxed) % fillers.len();
             turn.say_sentence(fillers[i]);
         }
+        turn.flush();
         // From here on, only the escalated role's words count as the answer.
         turn.answered = false;
         let prompt = format!("The user said: \"{text}\"\nTask: {}", esc.task);
@@ -387,6 +391,10 @@ impl Turn<'_> {
             self.answered = true;
         }
         (self.emit)(ReplyEvent::Text(text.into()));
+    }
+
+    fn flush(&self) {
+        (self.emit)(ReplyEvent::Flush);
     }
 
     /// A whole sentence, separated from anything said before it.
@@ -733,6 +741,9 @@ mod tests {
         let _ = std::fs::remove_file(&path);
 
         assert_eq!(spoken(&events), "On it. X is a thing.");
+        // The filler is flushed to TTS before the agent runs.
+        let filler = events.iter().position(|e| *e == ReplyEvent::Text("On it.".into()));
+        assert_eq!(events.get(filler.unwrap() + 1), Some(&ReplyEvent::Flush));
         let shared = shared.lock().unwrap();
         let doc = shared.documents.get("doc-1").unwrap();
         assert_eq!(doc.title, "About X");

@@ -19,6 +19,8 @@ const DEFAULT_TTS_MODEL: &str = "kitten-nano";
 /// the generation so queued and in-flight work for the old reply is dropped.
 enum Msg {
     Text(u64, String),
+    /// Speak the buffered partial sentence without ending the reply.
+    Flush(u64),
     End(u64),
 }
 
@@ -99,6 +101,11 @@ impl Speaker {
         let _ = self.tx.send(Msg::Text(*self.generation.lock().unwrap(), text.into()));
     }
 
+    /// Speak what's buffered now; more text may follow later.
+    pub fn flush(&self) {
+        let _ = self.tx.send(Msg::Flush(*self.generation.lock().unwrap()));
+    }
+
     /// The reply is complete; `SpeakingFinished` follows once it has played.
     pub fn end(&self) {
         let _ = self.tx.send(Msg::End(*self.generation.lock().unwrap()));
@@ -124,9 +131,10 @@ struct Worker {
 impl Worker {
     fn run(mut self, rx: mpsc::Receiver<Msg>) {
         for msg in rx {
-            let (generation, text) = match msg {
-                Msg::Text(g, t) => (g, Some(t)),
-                Msg::End(g) => (g, None),
+            let (generation, text, end) = match msg {
+                Msg::Text(g, t) => (g, Some(t), false),
+                Msg::Flush(g) => (g, None, false),
+                Msg::End(g) => (g, None, true),
             };
             if generation != *self.generation.lock().unwrap() {
                 continue;
@@ -144,6 +152,9 @@ impl Worker {
                 None => {
                     if let Some(sentence) = self.splitter.finish() {
                         self.speak(generation, &sentence);
+                    }
+                    if !end {
+                        continue;
                     }
                     let current = self.generation.lock().unwrap();
                     if *current == generation {

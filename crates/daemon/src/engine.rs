@@ -268,6 +268,11 @@ impl Engine {
                     self.transcript("assistant", &text, false).await?;
                 }
             }
+            ReplyEvent::Flush => {
+                if let Some(speaker) = &self.speaker {
+                    speaker.flush();
+                }
+            }
             ReplyEvent::Document(doc) => {
                 self.document_changed(&doc).await?;
                 self.request_sidebar("show").await?;

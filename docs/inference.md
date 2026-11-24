@@ -137,6 +137,11 @@ now a canned filler instead ([Escalation](#escalation)).
 - A valid `escalate(role, task)` ends the router's call with no follow-up round.
   If the router hasn't spoken, a canned filler is said at once ("Let me look
   into that." for `answer`, "On it." for `agent`, rotating through a few).
+- The splitter only ends a sentence once the next whitespace arrives, so the
+  router emits `ReplyEvent::Flush` after each model call and after the filler;
+  the speaker then speaks its buffered tail. Without it the filler waited for
+  the agent's answer (fixed 2026-11-24: "On it." synthesized 1.1 s after the
+  request instead of after a 24 s agent run).
 - `agent` falls back to `answer` when unset; with neither configured, an
   apology is spoken and no filler. A role that fails to build (missing key) is
   logged and treated as unset, so the router still works.
