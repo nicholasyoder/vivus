@@ -357,6 +357,15 @@ Word error rate, music at about the voice's level (−24 dBFS RMS at the mic):
 - **Mic gain.** The real recordings peaked at 0 dBFS with up to 4% of samples
   clipped (ALC897 capture at +30 dB). Clipping makes the echo path nonlinear,
   which a linear canceller can't follow; aim for peaks around −6 dBFS.
+- **Wake-up thump.** The dev machine's onboard input (ALC897) opens with a DC
+  thump: full scale for ~1.5 s, settled after ~4 s. PipeWire suspends idle
+  nodes after 5 s and we only capture while listening, so speech right after
+  listening starts (push-to-talk especially) is clipped. Workaround: a
+  WirePlumber rule with `session.suspend-timeout-seconds = 0` for that source.
+- **Real-room scenes.** `scripts/aec-bench/record-room.sh` records the sink's
+  monitor and the raw mic in one stream (run.sh's scene format) while you read
+  `prompts.txt` over music, so settings can be compared on the real room
+  instead of the simulated one.
 
 Local speech means always-on listening costs no network round trips.
 
