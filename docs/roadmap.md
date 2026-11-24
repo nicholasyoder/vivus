@@ -38,8 +38,6 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] `[audio] record_utterances`: save each utterance as heard, with its transcript (2026-11-24, `4189315`) — [speech.md](speech.md#recording-utterances)
 - [x] Echo cancellation quality: stereo reference, no noise suppression, duck other apps while the user talks; bench in `scripts/aec-bench/` (2026-11-24, `113e991`) — [speech.md](speech.md#echo-cancellation-quality)
 - [x] Keep the mic and canceller warm between listens: `[audio] keep_mic_open` (onboard inputs' wake-up thump clipped the first ~1.5 s) (2026-11-24, `10e3f6d`) — [speech.md](speech.md#keeping-the-mic-warm)
-- [ ] Warn when the mic input clips (log, later the settings page's level meter) — [speech.md](speech.md#echo-cancellation-quality)
-- [ ] STT accuracy on real speech: compare models (Whisper, Qwen3-ASR) on recorded utterances; remote STT if local isn't enough — [speech.md](speech.md#recording-utterances)
 
 ### 1c: Basic desktop control
 
@@ -53,7 +51,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [ ] systemd user unit for the daemon; `.desktop` entry for the sidebar; model download via `vivusctl` instead of `scripts/fetch-models.sh`
 - [ ] `org.vivus.Settings` D-Bus interface (`Get`/`Set`/`Changed`); daemon writes config with `toml_edit`, watches the file and reloads live — [settings.md](settings.md#d-bus)
 - [ ] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon — [settings.md](settings.md#audio-devices)
-- [ ] Sidebar settings page: input/output device pickers, mic level meter, end-of-turn silence, speech volume, duck volume — [settings.md](settings.md)
+- [ ] Sidebar settings page: input/output device pickers, mic level meter with a clip indicator, end-of-turn silence, speech volume, duck volume — [settings.md](settings.md)
 - [ ] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice — [settings.md](settings.md#roles-and-providers)
 
 ### 1e: Smarter answers
