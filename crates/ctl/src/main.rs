@@ -24,6 +24,8 @@ enum Cmd {
     Ask { text: Vec<String> },
     /// Interrupt whatever the assistant is doing.
     Cancel,
+    /// Shut the daemon down.
+    Quit,
     /// Show or hide the sidebar.
     ToggleSidebar,
     /// Print the assistant state.
@@ -48,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
         Cmd::PushToTalk { action: PttAction::Stop } => proxy.stop_listening().await,
         Cmd::Ask { text } => proxy.ask(&text.join(" ")).await,
         Cmd::Cancel => proxy.cancel().await,
+        Cmd::Quit => proxy.quit().await,
         Cmd::ToggleSidebar => proxy.toggle_sidebar().await,
         Cmd::Status => proxy.state().await.map(|s| println!("{s}")),
     };

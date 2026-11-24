@@ -26,6 +26,7 @@ pub enum Command {
     StopListening,
     Ask(String),
     Cancel,
+    Quit,
     VoiceReady(Box<anyhow::Result<Voice>>),
     Speech(Event),
 }
@@ -55,6 +56,10 @@ impl Engine {
         while let Some(cmd) = rx.recv().await {
             if !matches!(cmd, Command::Speech(Event::Partial(_))) {
                 tracing::debug!(?cmd, "command");
+            }
+            if matches!(cmd, Command::Quit) {
+                tracing::info!("quit requested");
+                break;
             }
             if let Err(e) = self.handle(cmd).await {
                 tracing::error!("handling command: {e:#}");
@@ -92,6 +97,7 @@ impl Engine {
                 }
             }
             Command::Cancel => self.stop_listening().await?,
+            Command::Quit => {} // handled in run()
             Command::Ask(text) => {
                 self.transcript("user", &text, true).await?;
                 self.respond(&text).await?;

@@ -1,6 +1,6 @@
 /* Default vivus-sidebar style. Copy to ~/.config/vivus/sidebar.qss to customize.
    Selectors: #VivusSidebar, #StateDot, #StateLabel, #History, #Document,
-   #Transcript, #Input, #TalkButton.
+   #Transcript, #Input, #TalkButton, #QuitButton.
    #VivusSidebar and #StateDot carry a `state` property:
    idle | listening | thinking | speaking | disconnected. */
 
@@ -44,6 +44,10 @@
 }
 #Input:focus {
     border-color: palette(highlight);
+}
+
+#QuitButton {
+    padding: 4px 10px;
 }
 
 #TalkButton {

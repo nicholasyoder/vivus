@@ -53,6 +53,10 @@ impl Assistant {
         self.send(Command::Cancel)
     }
 
+    async fn quit(&self) -> fdo::Result<()> {
+        self.send(Command::Quit)
+    }
+
     async fn toggle_sidebar(
         &self,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,

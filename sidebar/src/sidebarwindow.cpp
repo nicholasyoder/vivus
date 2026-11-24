@@ -1,6 +1,7 @@
 #include "sidebarwindow.h"
 #include "daemonclient.h"
 
+#include <QApplication>
 #include <QComboBox>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -51,10 +52,15 @@ SidebarWindow::SidebarWindow(DaemonClient *client, QWidget *parent)
     m_talk = new QPushButton(this);
     m_talk->setObjectName(QStringLiteral("TalkButton"));
 
+    m_quit = new QPushButton(tr("Quit"), this);
+    m_quit->setObjectName(QStringLiteral("QuitButton"));
+    m_quit->setToolTip(tr("Close the sidebar and stop the daemon"));
+
     auto *header = new QHBoxLayout;
     header->addWidget(m_stateDot);
     header->addWidget(m_stateLabel);
     header->addWidget(m_history, 1);
+    header->addWidget(m_quit);
 
     auto *footer = new QHBoxLayout;
     footer->addWidget(m_input, 1);
@@ -74,6 +80,10 @@ SidebarWindow::SidebarWindow(DaemonClient *client, QWidget *parent)
         m_input->clear();
     });
     connect(m_talk, &QPushButton::clicked, m_client, &DaemonClient::toggleListen);
+    connect(m_quit, &QPushButton::clicked, this, [this] {
+        m_client->quitDaemon();
+        QApplication::quit();
+    });
 
     connect(m_client, &DaemonClient::connectedChanged, this, &SidebarWindow::updateState);
     connect(m_client, &DaemonClient::stateChanged, this, &SidebarWindow::updateState);

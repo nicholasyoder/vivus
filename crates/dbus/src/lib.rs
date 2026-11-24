@@ -20,6 +20,7 @@ pub trait Assistant {
     fn stop_listening(&self) -> zbus::Result<()>;
     fn ask(&self, text: &str) -> zbus::Result<()>;
     fn cancel(&self) -> zbus::Result<()>;
+    fn quit(&self) -> zbus::Result<()>;
     fn toggle_sidebar(&self) -> zbus::Result<()>;
 
     #[zbus(signal)]

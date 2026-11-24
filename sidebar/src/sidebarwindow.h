@@ -35,4 +35,5 @@ private:
     QLabel *m_transcript;
     QLineEdit *m_input;
     QPushButton *m_talk;
+    QPushButton *m_quit;
 };

@@ -37,7 +37,7 @@ are prefixed `vivus_` (e.g. `vivus_toplevel_info_v1`); config is
 |---|---|---|
 | `vivus-daemon` | Rust | Audio pipeline, speech, LLM orchestration, tools, compositor backends, D-Bus service. Runs without a UI. |
 | `vivus-sidebar` | C++ / Qt6 Widgets | Layer-shell panel: sidebar documents, state, live transcript, text input. A pure D-Bus client. |
-| `vivusctl` | Rust | CLI: `toggle-listen`, `push-to-talk start/stop`, `ask`, `cancel`, `toggle-sidebar`, `status`. For keybinds on compositors without a `GlobalShortcuts` portal, scripting and testing. |
+| `vivusctl` | Rust | CLI: `toggle-listen`, `push-to-talk start/stop`, `ask`, `cancel`, `quit`, `toggle-sidebar`, `status`. For keybinds on compositors without a `GlobalShortcuts` portal, scripting and testing. |
 | Forest plugin | C++ / Qt | Later and optional; a bridge in the Forest repo. |
 
 ## Repository layout

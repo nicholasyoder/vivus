@@ -30,6 +30,8 @@ public:
     void ask(const QString &text);
     void toggleListen();
     void cancel();
+    // Asks the daemon to exit; blocks briefly so the call is sent before the app closes.
+    void quitDaemon();
 
 signals:
     void connectedChanged(bool connected);

@@ -56,6 +56,12 @@ void DaemonClient::ask(const QString &text)
 void DaemonClient::toggleListen() { m_assistant->ToggleListen(); }
 void DaemonClient::cancel() { m_assistant->Cancel(); }
 
+void DaemonClient::quitDaemon()
+{
+    if (m_connected)
+        m_assistant->Quit().waitForFinished();
+}
+
 void DaemonClient::onPropertiesChanged(const QString &iface, const QVariantMap &changed, const QStringList &invalidated)
 {
     if (iface != QLatin1String("org.vivus.Assistant"))
