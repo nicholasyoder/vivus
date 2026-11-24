@@ -11,6 +11,9 @@ instead. All sherpa-onnx use stays in `crates/speech`.
 PipeWire capture (vivus-capture thread, 16 kHz mono, inactive until listening)
    └─► channel ─► vivus-speech thread: Listener = Silero VAD + SpeechRecognizer
                      └─► Event::{SpeechStarted, Partial, Final} ─► engine ─► D-Bus Transcript
+
+engine reply text ─► vivus-tts thread: SentenceSplitter ─► Synthesizer (one sentence at a time)
+   └─► PipeWire playback (vivus-playback thread, 24 kHz mono) ─► SpeakingFinished ─► engine
 ```
 
 - **Capture** (`crates/audio`): fixed F32 / 16 kHz / mono format so PipeWire's adapter resamples and downmixes. `[audio] input` targets a specific node (e.g. the echo-cancel source); otherwise the default source.
@@ -24,8 +27,8 @@ PipeWire capture (vivus-capture thread, 16 kHz mono, inactive until listening)
 
 | Tier | STT | TTS | Target machine |
 |---|---|---|---|
-| Light (default) | `parakeet-tdt-110m` (int8, ~130 MB): re-decoded, adds punctuation | Kitten TTS | Any laptop CPU |
-| Standard | `nemotron-streaming-0.6b` (int8, 160 ms chunks, ~650 MB): native streaming | Kokoro (82M) | 4+ cores, no GPU |
+| Light (default) | `parakeet-tdt-110m` (int8, ~130 MB): re-decoded, adds punctuation | `kitten-nano` (Kitten v0.8 nano, fp32, ~75 MB) | Any laptop CPU |
+| Standard | `nemotron-streaming-0.6b` (int8, 160 ms chunks, ~650 MB): native streaming | `kokoro` (Kokoro v1.0, fp32, ~380 MB) | 4+ cores, no GPU |
 | Remote | Groq Whisper (final only), Deepgram (streaming) | Cloud TTS | Anything with a network |
 
 Model names map to sherpa-onnx release archives in `crates/speech/src/models.rs`;
@@ -46,8 +49,25 @@ speak, but commands are short; Nemotron's cost is flat but higher overall. No
 silence padding is needed before finishing a streaming utterance: the VAD's
 min-silence window has already been fed in. Still to do: benchmark a 4-core laptop.
 
+TTS, same machine, `tts_bench`, 2 threads, after warm-up. "First sentence" is
+"It's twenty past three in the afternoon." (time to first audio).
+
+| Model | Compute / audio time | First sentence | Warm-up (first call) |
+|---|---|---|---|
+| kitten-nano fp32 | 0.09 | 330 ms | 75 ms |
+| kitten-nano int8 | 0.20 | 790 ms | 175 ms |
+| kokoro fp32 | 0.40 | 780 ms | 400 ms |
+| kokoro int8 | 0.81 | 1570 ms | 790 ms |
+
+int8 is about twice as slow as fp32 on this x86 CPU, so the catalog uses fp32.
+More threads help little (Kokoro fp32 at 4 threads: ~0.35). Kitten speaks at a
+noticeably slower pace than Kokoro (12.3 s vs 6.6 s for the same text). Output
+of both round-trips through parakeet word for word. Kokoro's first sentence is
+too slow for the ~1 s target on a weak CPU, which is why it's the standard tier.
+
 ```sh
 cargo run --release -p vivus-speech --example stt_bench -- <model> file.wav [threads]
+cargo run --release -p vivus-speech --example tts_bench -- <model> [voice|-] [threads] [out.wav] [text]
 ```
 
 Other sherpa-onnx models worth evaluating: Moonshine (tiny/base, quantized),
@@ -62,10 +82,47 @@ shrink, and lets the router start speculatively before you've definitely finishe
 
 ## TTS
 
-Not built yet. Plan: sherpa-onnx `OfflineTts` (Kitten for light, Kokoro for
-standard), PipeWire playback in `crates/audio`, synthesized one sentence at a
-time as the router streams `speak` text, so first audio starts after the first
-sentence.
+- **Synthesizer** (`crates/speech/src/tts.rs`): sherpa-onnx `OfflineTts`, one
+  sentence per call. Models and voice tables are in `models.rs`; `[roles.tts]
+  voice` picks the speaker (Kokoro: `af_heart`, `bm_george`, …, English voices
+  only; Kitten: `bella`, `jasper`, `luna`, `bruno`, `rosie`, `hugo`, `kiki`,
+  `leo`). Unset `tts` means `kitten-nano`. The daemon synthesizes a short
+  warm-up phrase at load because the first inference is several times slower.
+- **No espeak-ng**: sherpa-onnx 2.x dropped it (GPL), so models need a lexicon.
+  Kokoro's archive ships `lexicon-us-en.txt`/`lexicon-gb-en.txt` (British voices
+  get the latter). Kitten's doesn't; it uses the shared espeak-IPA
+  `lexicon-en-us.txt` from the `tts-models` release, stored in the models dir.
+  **Out-of-lexicon words are dropped silently** (sherpa logs "OOV word
+  skipped"): "Open Hyprland and zorbleflax the Kubernetes pods." is spoken as
+  "Open and the pods." with both models. Needs a fallback, see
+  [Out-of-lexicon words](#out-of-lexicon-words).
+- **Sentence splitting** (`SentenceSplitter`): streamed deltas in, complete
+  sentences out. Splits on `.!?…` followed by whitespace, and on newlines; skips
+  abbreviations and initials; past 120 bytes it splits at a clause boundary so a
+  long first sentence doesn't delay audio.
+- **Playback** (`crates/audio/src/playback.rs`): F32 mono at the model rate, inactive
+  except while playing. `play` queues, `end` reports `on_finished` after
+  PipeWire's `drained`, `stop` drops everything at once. `[audio] output` targets a node.
+- **Daemon** (`crates/daemon/src/speaker.rs`): own `vivus-tts` thread so STT keeps
+  running during synthesis (needed for barge-in). Each reply has a generation;
+  `stop()` bumps it under a lock, so audio from a cancelled reply never reaches
+  playback. State is `speaking` until `SpeakingFinished`. Until echo cancellation
+  lands, the mic is paused while speaking in conversation mode; starting to
+  listen or `Cancel` stops speech.
+
+### Out-of-lexicon words
+
+The lexicons cover CMUdict plus extras (~168k entries), so product names, jargon
+and new words are missing, and an assistant says those a lot. Options:
+a neural G2P (e.g. a small ONNX grapheme-to-phoneme model) run on OOV words and
+passed through `GenerationConfig::phoneme_codepoints`; a user lexicon file
+merged with the shipped one (sherpa accepts a comma-separated lexicon list);
+or, as a last resort, spelling unknown words letter by letter. A neural G2P is
+the real fix; a user lexicon is cheap and useful alongside it.
+
+Testing without speakers: create a null sink, set `[audio] output` to it, and
+record its monitor with `pw-record --target <sink> -P '{ stream.capture.sink=true }'`
+(then transcribe the recording with `stt_bench`).
 
 ## Barge-in
 

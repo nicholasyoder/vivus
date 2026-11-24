@@ -23,6 +23,9 @@ command = "claude"
 provider = "local-speech"
 model = "parakeet-tdt-110m"
 
+# Unset tts defaults to local-speech with kitten-nano.
+# Models and voices: kitten-nano (light; bella, jasper, luna, bruno, rosie,
+# hugo, kiki, leo), kokoro (standard; af_heart, af_bella, am_michael, bf_emma, ...).
 [roles.tts]
 provider = "local-speech"
 model = "kokoro"
@@ -41,4 +44,5 @@ provider = "claude-code"
 
 [audio]
 # input = "echo-cancel-source"
+# output = "alsa_output.pci-0000_00_1f.3.analog-stereo"
 end_of_turn_silence = 0.4

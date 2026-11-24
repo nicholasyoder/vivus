@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use anyhow::{Context, bail};
 use tokio::sync::mpsc::UnboundedSender;
 use vivus_audio::{Capture, CaptureOptions};
-use vivus_core::config::{Config, Provider};
+use vivus_core::config::{Config, Provider, Role};
 use vivus_speech::{Listener, Mode, VadOptions, stt};
 
 use crate::engine::Command;
@@ -35,7 +35,12 @@ impl std::fmt::Debug for Voice {
 impl Voice {
     /// Loads models (slow: run off the async runtime).
     pub fn new(config: &Config, events: UnboundedSender<Command>) -> anyhow::Result<Self> {
-        let (models_dir, threads, model) = resolve_stt(config)?;
+        let LocalSpeech {
+            models_dir,
+            threads,
+            model,
+            ..
+        } = resolve_local(config, "stt", config.roles.stt.as_ref(), DEFAULT_STT_MODEL)?;
         tracing::info!("stt: {model} ({threads} threads) from {}", models_dir.display());
 
         let rec = stt::create(
@@ -112,24 +117,44 @@ impl Voice {
     }
 }
 
-fn resolve_stt(config: &Config) -> anyhow::Result<(PathBuf, i32, String)> {
+/// A speech role resolved to the local-speech provider.
+pub(crate) struct LocalSpeech {
+    pub models_dir: PathBuf,
+    pub threads: i32,
+    pub model: String,
+    pub voice: Option<String>,
+}
+
+/// An unset role means local speech with `default_model`.
+pub(crate) fn resolve_local(
+    config: &Config,
+    name: &str,
+    role: Option<&Role>,
+    default_model: &str,
+) -> anyhow::Result<LocalSpeech> {
     let default_dir = || vivus_speech::default_models_dir().context("no home directory");
-    let Some(role) = &config.roles.stt else {
-        return Ok((default_dir()?, 2, DEFAULT_STT_MODEL.into()));
+    let Some(role) = role else {
+        return Ok(LocalSpeech {
+            models_dir: default_dir()?,
+            threads: 2,
+            model: default_model.into(),
+            voice: None,
+        });
     };
     match &config.providers[&role.provider] {
         Provider::LocalSpeech {
             models_dir,
             threads,
-        } => {
-            let dir = match models_dir {
+        } => Ok(LocalSpeech {
+            models_dir: match models_dir {
                 Some(d) => expand_tilde(d),
                 None => default_dir()?,
-            };
-            let model = role.model.clone().unwrap_or_else(|| DEFAULT_STT_MODEL.into());
-            Ok((dir, *threads, model))
-        }
-        _ => bail!("stt provider `{}`: only local-speech is implemented so far", role.provider),
+            },
+            threads: *threads,
+            model: role.model.clone().unwrap_or_else(|| default_model.into()),
+            voice: role.voice.clone(),
+        }),
+        _ => bail!("{name} provider `{}`: only local-speech is implemented so far", role.provider),
     }
 }
 

@@ -22,8 +22,13 @@ fetch_archive() { # tag name
 tier=${1:-standard}
 fetch_file asr-models silero_vad_v5.onnx
 case $tier in
-    light|all) fetch_archive asr-models sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8 ;;&
-    standard|all) fetch_archive asr-models sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25 ;;
+    light|all)
+        fetch_archive asr-models sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8
+        fetch_archive tts-models kitten-nano-en-v0_8-fp32
+        fetch_file tts-models lexicon-en-us.txt ;;&
+    standard|all)
+        fetch_archive asr-models sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25
+        fetch_archive tts-models kokoro-multi-lang-v1_0 ;;
     light) ;;
     *) echo "unknown tier: $tier" >&2; exit 1 ;;
 esac

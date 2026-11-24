@@ -1,5 +1,5 @@
 //! Owns assistant behaviour. Inference isn't wired up yet: a final transcript
-//! (or `Ask`) produces a placeholder sidebar document.
+//! (or `Ask`) produces a placeholder sidebar document and a spoken reply.
 
 use std::sync::{Arc, Mutex};
 
@@ -9,6 +9,7 @@ use vivus_speech::{Event, Mode};
 use zbus::Connection;
 
 use crate::service;
+use crate::speaker::Speaker;
 use crate::voice::Voice;
 
 /// State read synchronously by D-Bus property/method handlers. Never hold the
@@ -28,7 +29,10 @@ pub enum Command {
     Cancel,
     Quit,
     VoiceReady(Box<anyhow::Result<Voice>>),
+    SpeakerReady(Box<anyhow::Result<Speaker>>),
     Speech(Event),
+    /// The spoken reply has finished playing.
+    SpeakingFinished,
 }
 
 pub struct Engine {
@@ -37,7 +41,8 @@ pub struct Engine {
     conn: Connection,
     shared: Arc<Mutex<Shared>>,
     voice: Option<Voice>,
-    /// Set while the mic is open.
+    speaker: Option<Speaker>,
+    /// Set while in a listening mode, including while paused during a reply.
     listen_mode: Option<Mode>,
 }
 
@@ -48,6 +53,7 @@ impl Engine {
             conn,
             shared,
             voice: None,
+            speaker: None,
             listen_mode: None,
         }
     }
@@ -76,6 +82,18 @@ impl Engine {
                 }
                 Err(e) => tracing::error!("voice unavailable: {e:#}"),
             },
+            Command::SpeakerReady(speaker) => match *speaker {
+                Ok(s) => {
+                    tracing::info!("speech output ready");
+                    self.speaker = Some(s);
+                }
+                Err(e) => tracing::error!("speech output unavailable: {e:#}"),
+            },
+            Command::SpeakingFinished => {
+                if self.state() == AssistantState::Speaking {
+                    self.after_reply().await?;
+                }
+            }
             Command::ToggleListen => {
                 if self.listen_mode.is_some() {
                     self.stop_listening().await?;
@@ -96,7 +114,10 @@ impl Engine {
                     self.stop_listening().await?;
                 }
             }
-            Command::Cancel => self.stop_listening().await?,
+            Command::Cancel => {
+                self.stop_speaking();
+                self.stop_listening().await?;
+            }
             Command::Quit => {} // handled in run()
             Command::Ask(text) => {
                 self.transcript("user", &text, true).await?;
@@ -108,6 +129,8 @@ impl Engine {
     }
 
     async fn start_listening(&mut self, mode: Mode) -> zbus::Result<()> {
+        // Talking over a reply interrupts it.
+        self.stop_speaking();
         let Some(voice) = &self.voice else {
             tracing::warn!("listen requested but voice isn't available (see earlier errors)");
             return Ok(());
@@ -118,6 +141,7 @@ impl Engine {
     }
 
     async fn stop_listening(&mut self) -> zbus::Result<()> {
+        self.stop_speaking();
         if let Some(v) = &self.voice {
             v.stop();
         }
@@ -144,7 +168,7 @@ impl Engine {
         Ok(())
     }
 
-    /// Placeholder until the router lands. Returns to listening in conversation mode.
+    /// Placeholder until the router lands.
     async fn respond(&self, text: &str) -> zbus::Result<()> {
         self.set_state(AssistantState::Thinking).await?;
 
@@ -153,13 +177,45 @@ impl Engine {
         let doc = self.shared.lock().unwrap().documents.create(text, markdown).clone();
         self.document_changed(&doc).await?;
         self.request_sidebar("show").await?;
-        self.transcript("assistant", "Inference isn't wired up yet.", true).await?;
+        self.speak("Inference isn't wired up yet. I've put your request in the sidebar.")
+            .await
+    }
 
-        let next = match self.listen_mode {
-            Some(_) => AssistantState::Listening,
-            None => AssistantState::Idle,
+    /// Speaks a whole reply; falls straight through to `after_reply` without TTS.
+    async fn speak(&self, reply: &str) -> zbus::Result<()> {
+        self.transcript("assistant", reply, true).await?;
+        let Some(speaker) = &self.speaker else {
+            return self.after_reply().await;
         };
-        self.set_state(next).await
+        // No echo cancellation yet, so the mic would hear the reply.
+        if let (Some(_), Some(voice)) = (self.listen_mode, &self.voice) {
+            voice.stop();
+        }
+        self.set_state(AssistantState::Speaking).await?;
+        speaker.say(reply);
+        speaker.end();
+        Ok(())
+    }
+
+    /// Back to listening in conversation mode, else idle.
+    async fn after_reply(&self) -> zbus::Result<()> {
+        match (self.listen_mode, &self.voice) {
+            (Some(mode), Some(voice)) => {
+                voice.start(mode);
+                self.set_state(AssistantState::Listening).await
+            }
+            _ => self.set_state(AssistantState::Idle).await,
+        }
+    }
+
+    fn stop_speaking(&self) {
+        if let Some(s) = &self.speaker {
+            s.stop();
+        }
+    }
+
+    fn state(&self) -> AssistantState {
+        self.shared.lock().unwrap().state
     }
 
     async fn set_state(&self, state: AssistantState) -> zbus::Result<()> {

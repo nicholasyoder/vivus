@@ -18,10 +18,11 @@ using only standard protocols.
 
 - [x] Project skeleton: Cargo workspace, D-Bus contract, `vivusctl`, Widgets sidebar (2026-11-20, `5bc6738`)
 - [x] Voice input: PipeWire capture, Silero VAD, local streaming STT, live transcript in the sidebar (2026-11-23, `ffd138c`) — [speech.md](speech.md)
+- [x] Local TTS (Kitten / Kokoro via sherpa-onnx) with PipeWire playback, fed one sentence at a time; `speaking` state (2026-11-23, `HASH`) — [speech.md](speech.md#tts)
 
 ### Voice
 
-- [ ] Local TTS (Kokoro / Kitten via sherpa-onnx) with PipeWire playback, fed one sentence at a time; `speaking` state — [speech.md](speech.md#tts)
+- [ ] TTS fallback for out-of-lexicon words (dropped silently today): neural G2P and/or a user lexicon — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] Echo cancellation (set up or auto-load PipeWire `module-echo-cancel`) and barge-in: speech during playback cancels TTS and LLM within ~200 ms — [speech.md](speech.md#barge-in)
 - [ ] Semantic end-of-turn check on partials, so the silence threshold can shrink; start the router speculatively — [speech.md](speech.md#turn-detection)
 - [ ] Remote STT provider (Groq Whisper, final-only) so `stt` has two providers
@@ -107,3 +108,4 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 - Sidebar uses Qt Widgets + QSS, not QML, so Forest's QSS themes can style it (2026-11-20).
 - Speech (VAD/STT/TTS) is local by default; LLM roles are remote by default (2026-11-23).
 - STT interface streams partials and finals; local default is `parakeet-tdt-110m` (2026-11-23).
+- Local TTS: `kitten-nano` (light, default) and `kokoro` v1.0 (standard), fp32 (int8 is ~2× slower on x86), lexicon frontend since sherpa-onnx 2.x has no espeak-ng (2026-11-23).

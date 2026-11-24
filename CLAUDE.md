@@ -19,7 +19,7 @@ what's next. Topic docs in `docs/` hold the design detail
 - `dbus/org.vivus.Assistant.xml` is the contract. Change it first, then `crates/dbus` (client proxies), `crates/daemon/src/service.rs` (server) and the sidebar (generated from the XML by `qt_add_dbus_interface`).
 - The daemon's D-Bus methods only enqueue `engine::Command`s; behaviour lives in the engine so in-flight work can be cancelled.
 - Keep compositor-specific code behind backend interfaces ([vision.md](docs/vision.md) principle 1).
-- All sherpa-onnx use stays in `crates/speech` (blocking; runs on the daemon's `vivus-speech` thread). `crates/audio` is PipeWire only.
+- All sherpa-onnx use stays in `crates/speech` (blocking; runs on the daemon's `vivus-speech` and `vivus-tts` threads). `crates/audio` is PipeWire only.
 - Sidebar is Qt Widgets, not QML. Styling goes through QSS on object names (`sidebar/data/sidebar.qss`), so keep object names stable.
 - Comments: 1-3 lines, only the non-obvious why.
 - Testing voice without a mic: see [docs/speech.md](docs/speech.md#testing-without-a-microphone).

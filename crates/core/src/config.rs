@@ -37,6 +37,8 @@ pub struct Config {
 pub struct Audio {
     /// PipeWire node to capture from, e.g. the echo-cancel source. Default source if unset.
     pub input: Option<String>,
+    /// PipeWire node to play speech to. Default sink if unset.
+    pub output: Option<String>,
     /// Seconds of silence that end an utterance in conversation mode.
     pub end_of_turn_silence: f32,
 }
@@ -45,6 +47,7 @@ impl Default for Audio {
     fn default() -> Self {
         Self {
             input: None,
+            output: None,
             end_of_turn_silence: 0.4,
         }
     }

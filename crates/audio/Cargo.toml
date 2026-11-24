@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-# 0.3.44: TARGET_OBJECT. PipeWire 1.x is universal on current distros.
-pipewire = { version = "0.10.1", features = ["v0_3_44"] }
+# 0.3.49: TARGET_OBJECT, pw_buffer.requested. PipeWire 1.x is universal on current distros.
+pipewire = { version = "0.10.1", features = ["v0_3_49"] }
 thiserror.workspace = true
 tracing.workspace = true
