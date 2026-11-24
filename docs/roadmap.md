@@ -4,7 +4,7 @@ Goal: talk to your Linux desktop like a capable person next to you. See
 [vision.md](vision.md) for the vision and principles.
 
 **How to use this file.** Each unchecked item is sized for roughly one working
-session. Pick the first unchecked item in the current phase (unless there's a
+session. Pick the first unchecked item in the current sub-phase (unless there's a
 reason to jump), do it, then check it off with the date and commit in the same
 commit as the work. Checked items stay where they are. Design detail belongs in the linked topic docs, not here.
 New work discovered along the way gets a new line item.
@@ -12,55 +12,56 @@ New work discovered along the way gets a new line item.
 ## Phase 1: Voice loop and sidebar ← current
 
 Talking to the computer works smoothly for questions and basic app control,
-using only standard protocols.
+using only standard protocols. Sub-phases are ordered by need: what makes
+everyday use work comes first, then smarter answers, then polish.
 
-### Foundation
+### 1a: Working loop
 
 - [x] Project skeleton: Cargo workspace, D-Bus contract, `vivusctl`, Widgets sidebar (2026-11-20, `5bc6738`)
-
-### Inference
-
 - [x] `vivus-inference`: OpenAI-compatible streaming chat client with tool calls (2026-11-23, `696b45d`) — [inference.md](inference.md)
 - [x] Smoke-test the client against Groq and nano-gpt with real keys (`--example chat`) (2026-11-23, `658a656`) — [inference.md](inference.md#smoke-test-2026-11-23)
-- [x] Router: one streaming call; content is speech and streams into TTS; `show` / `escalate` tools; the speech-vs-sidebar rules (numbers as words until normalization lands) (2026-11-24, `cabb729`) — [inference.md](inference.md#routing)
-- [x] Escalation to `answer` and `agent`, including the Claude Code provider; canned filler when the router escalates silently (2026-11-24, `0e169fb`) — [inference.md](inference.md#escalation)
-- [ ] Long escalations: `thinking` state after the filler, a spoken progress line for agent runs past ~15 s — [inference.md](inference.md#escalation)
-- [ ] Context providers: time/date, locale, active window, clipboard — [architecture.md](architecture.md#daemon-internals)
-- [ ] Conversation memory: rolling history so follow-ups work
-- [ ] `web_search` and `fetch_url` with a configurable provider; sourced sidebar documents — [inference.md](inference.md#web-access)
-
-### Voice
-
 - [x] Voice input: PipeWire capture, Silero VAD, local streaming STT, live transcript in the sidebar (2026-11-23, `ffd138c`) — [speech.md](speech.md)
 - [x] Local TTS (Kitten / Kokoro via sherpa-onnx) with PipeWire playback, fed one sentence at a time; `speaking` state (2026-11-23, `3d66e65`) — [speech.md](speech.md#tts)
+- [x] Router: one streaming call; content is speech and streams into TTS; `show` / `escalate` tools; the speech-vs-sidebar rules (numbers as words until normalization lands) (2026-11-24, `cabb729`) — [inference.md](inference.md#routing)
+- [x] Escalation to `answer` and `agent`, including the Claude Code provider; canned filler when the router escalates silently (2026-11-24, `0e169fb`) — [inference.md](inference.md#escalation)
+
+### 1b: Speaking well ← current
+
 - [ ] TTS text normalization: numbers, times, dates, units, currency, acronyms, abbreviations, URLs (all dropped today); log remaining OOV words — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] Own phonemizer: lexicon lookup in Rust, `phoneme_codepoints` to sherpa; ARPAbet pronunciation file (learned + user entries) converted per model — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] LLM pronunciation lookup for OOV words, started while the reply streams; cached in the learned lexicon; idle prefetch of app names and window titles — [speech.md](speech.md#out-of-lexicon-words)
-- [ ] Local neural G2P as the offline / over-deadline fallback for OOV words — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] Echo cancellation (set up or auto-load PipeWire `module-echo-cancel`) and barge-in: speech during playback cancels TTS and LLM within ~200 ms — [speech.md](speech.md#barge-in)
-- [ ] Semantic end-of-turn check on partials, so the silence threshold can shrink; start the router speculatively — [speech.md](speech.md#turn-detection)
-- [ ] Remote STT provider (Groq Whisper, final-only) so `stt` has two providers
 - [ ] Capture downmixes all channels (a stereo mic currently links only `FL`)
 
-### Desktop control (standard protocols)
+### 1c: Basic desktop control
 
 - [ ] App launching: parse `.desktop` files, fuzzy-match the spoken name, launch with an `xdg-activation` token
 - [ ] Windows: list with `ext-foreign-toplevel-list-v1`; switch/close/minimize with `wlr-foreign-toplevel-management`; active window as context (`vivus-wayland`)
-- [ ] Clipboard read/write via `wlr-data-control`
 - [ ] Push-to-talk and toggle-listen through the `GlobalShortcuts` portal (`vivusctl` stays the fallback)
+- [ ] Clipboard read/write via `wlr-data-control`
 
-### Settings
+### 1d: Everyday setup
 
+- [ ] systemd user unit for the daemon; `.desktop` entry for the sidebar; model download via `vivusctl` instead of `scripts/fetch-models.sh`
 - [ ] `org.vivus.Settings` D-Bus interface (`Get`/`Set`/`Changed`); daemon writes config with `toml_edit`, watches the file and reloads live — [settings.md](settings.md#d-bus)
 - [ ] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon — [settings.md](settings.md#audio-devices)
 - [ ] Sidebar settings page: input/output device pickers, mic level meter, end-of-turn silence — [settings.md](settings.md)
 - [ ] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice — [settings.md](settings.md#roles-and-providers)
-- [ ] Add/edit providers (base URL, API key) from the sidebar, once key storage is decided
 
-### Sidebar and packaging
+### 1e: Smarter answers
 
+- [ ] Conversation memory: rolling history so follow-ups work
+- [ ] Context providers: time/date, locale, active window, clipboard — [architecture.md](architecture.md#daemon-internals)
+- [ ] `web_search` and `fetch_url` with a configurable provider; sourced sidebar documents — [inference.md](inference.md#web-access)
+- [ ] Long escalations: `thinking` state after the filler, a spoken progress line for agent runs past ~15 s — [inference.md](inference.md#escalation)
+
+### 1f: Polish
+
+- [ ] Semantic end-of-turn check on partials, so the silence threshold can shrink; start the router speculatively — [speech.md](speech.md#turn-detection)
+- [ ] Local neural G2P as the offline / over-deadline fallback for OOV words — [speech.md](speech.md#out-of-lexicon-words)
+- [ ] Remote STT provider (Groq Whisper, final-only) so `stt` has two providers
 - [ ] Sidebar polish: document history UX, code blocks, images, show/hide behaviour
-- [ ] systemd user unit for the daemon; `.desktop` entry for the sidebar; model download via `vivusctl` instead of `scripts/fetch-models.sh`
+- [ ] Add/edit providers (base URL, API key) from the sidebar, once key storage is decided
 - [ ] Benchmark the light tier on a 4-core laptop with no GPU; settle the default STT/TTS models — [speech.md](speech.md#tiers)
 
 ### Phase 1 is done when
@@ -112,6 +113,7 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 ## Decided
 
+- Phase 1 is split into need-ordered sub-phases instead of categories; speech quality comes next, smarter answers (memory, context, web, long escalations) after basic desktop control and setup (2026-11-24).
 - The router's spoken reply is its streamed text content, not a `speak` tool: providers send tool arguments in one final chunk (2026-11-23).
 - OpenAI-compatible client is our own `reqwest` + SSE code, not `async-openai`, for quirk tolerance and raw tool-argument deltas (2026-11-23).
 - Inference before the rest of the voice items, to get the live STT → LLM → TTS loop working first (2026-11-23).

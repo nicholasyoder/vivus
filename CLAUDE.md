@@ -8,7 +8,7 @@ what's next. Topic docs in `docs/` hold the design detail
 
 ## Working on roadmap items
 
-- One roadmap item per session, usually the first unchecked one in the current phase.
+- One roadmap item per session, usually the first unchecked one in the current sub-phase.
 - When it's done, check it off with the date and short commit hash, in the same commit as the work (amend or follow up with the hash if needed). Leave it in its section; don't move finished items.
 - Keep the roadmap concise: one line per item. Design notes, findings and benchmarks go in the relevant topic doc (create one if none fits) and the item links to it.
 - New work discovered along the way becomes a new roadmap item, not a paragraph.
