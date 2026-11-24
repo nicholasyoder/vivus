@@ -55,6 +55,22 @@ fn path(p: &Path) -> Option<String> {
     Some(p.to_string_lossy().into_owned())
 }
 
+/// Silence around each streaming utterance. Without the lead a word spoken
+/// right at the start is dropped; without the tail the last word never leaves
+/// the encoder's lookahead (push-to-talk ends with no trailing silence).
+const LEAD_PAD: f32 = 0.1;
+const TAIL_PAD: f32 = 0.32;
+
+fn silence(secs: f32) -> Vec<f32> {
+    vec![0.0; (secs * SAMPLE_RATE as f32) as usize]
+}
+
+fn new_stream(recognizer: &OnlineRecognizer) -> OnlineStream {
+    let stream = recognizer.create_stream();
+    stream.accept_waveform(SAMPLE_RATE, &silence(LEAD_PAD));
+    stream
+}
+
 struct Streaming {
     recognizer: OnlineRecognizer,
     stream: OnlineStream,
@@ -75,7 +91,7 @@ impl Streaming {
 
         let recognizer =
             OnlineRecognizer::create(&config).ok_or_else(|| Error::LoadFailed(name.into()))?;
-        let stream = recognizer.create_stream();
+        let stream = new_stream(&recognizer);
         Ok(Self {
             recognizer,
             stream,
@@ -105,8 +121,7 @@ impl SpeechRecognizer for Streaming {
     }
 
     fn finish(&mut self) -> String {
-        // No silence padding needed: the VAD only ends an utterance after its
-        // min-silence window, which has already been fed in.
+        self.stream.accept_waveform(SAMPLE_RATE, &silence(TAIL_PAD));
         self.stream.input_finished();
         self.decode();
         let text = std::mem::take(&mut self.text);
@@ -115,7 +130,7 @@ impl SpeechRecognizer for Streaming {
     }
 
     fn reset(&mut self) {
-        self.stream = self.recognizer.create_stream();
+        self.stream = new_stream(&self.recognizer);
         self.text.clear();
     }
 }

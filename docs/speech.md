@@ -42,12 +42,18 @@ to final text.
 | Model | Compute / audio time | Final, 6.6 s utterance | Final, 16.7 s utterance |
 |---|---|---|---|
 | parakeet-tdt-110m | 0.20–0.48 (grows with length) | 110 ms | 290 ms |
-| nemotron-streaming-0.6b | 0.47 (flat) | ~0 ms | ~0 ms |
+| nemotron-streaming-0.6b | 0.48 (flat) | ~150 ms | ~150 ms |
 
 Both transcribe the test clips correctly. Re-decoding costs more the longer you
-speak, but commands are short; Nemotron's cost is flat but higher overall. No
-silence padding is needed before finishing a streaming utterance: the VAD's
-min-silence window has already been fed in. Still to do: benchmark a 4-core laptop.
+speak, but commands are short; Nemotron's cost is flat but higher overall.
+Nemotron outputs no punctuation. Still to do: benchmark a 4-core laptop.
+
+The streaming model needs silence around each utterance or it clips words at
+the edges, worst in push-to-talk, where speech runs right up to key release.
+Every stream starts with 0.1 s of zeros (without them a word spoken at once,
+such as "Yes", is lost) and ends with 0.32 s (two 160 ms chunks, so the last
+word clears the encoder's lookahead). With less tail, "...call Sarah tomorrow"
+came out as "...call Sarah to". The tail is the ~150 ms "Final" above.
 
 TTS, same machine, `tts_bench`, 2 threads, after warm-up. "First sentence" is
 "It's twenty past three in the afternoon." (time to first audio).
@@ -68,6 +74,8 @@ too slow for the ~1 s target on a weak CPU, which is why it's the standard tier.
 ```sh
 cargo run --release -p vivus-speech --example stt_bench -- <model> file.wav [threads]
 cargo run --release -p vivus-speech --example tts_bench -- <model> [voice|-] [threads] [out.wav] [text]
+# full listener (VAD + STT), any sample rate; --hold mimics push-to-talk
+cargo run --release -p vivus-speech --example listen_file -- [--hold] [--pad secs] <model> file.wav...
 ```
 
 Other sherpa-onnx models worth evaluating: Moonshine (tiny/base, quantized),

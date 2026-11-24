@@ -4,7 +4,8 @@ use vivus_speech::{Event, Listener, Mode, SAMPLE_RATE, VadOptions, default_model
 
 const WAV: &str = "sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25/test_wavs/0.wav";
 
-fn run(model: &str, mode: Mode) -> Option<Vec<Event>> {
+/// The clip trimmed to its speech, then `pad` seconds of silence either side.
+fn run(model: &str, mode: Mode, pad: f32) -> Option<Vec<Event>> {
     let dir = default_models_dir()?;
     let wave = sherpa_onnx::Wave::read(dir.join(WAV).to_str()?)?;
     let rec = stt::create(&dir, model, &Default::default()).ok()?;
@@ -12,8 +13,12 @@ fn run(model: &str, mode: Mode) -> Option<Vec<Event>> {
     listener.set_mode(mode);
 
     let mut events = Vec::new();
-    let silence = vec![0.0; SAMPLE_RATE as usize];
-    let audio: Vec<f32> = [&silence[..], wave.samples(), &silence[..]].concat();
+    let silence = vec![0.0; (pad * SAMPLE_RATE as f32) as usize];
+    let samples = wave.samples();
+    let loud = |s: &&f32| s.abs() > 0.02;
+    let start = samples.iter().position(|s| loud(&s))?;
+    let end = samples.len() - samples.iter().rev().position(|s| loud(&s))?;
+    let audio: Vec<f32> = [&silence[..], &samples[start..end], &silence[..]].concat();
     for chunk in audio.chunks(320) {
         listener.push(chunk, &mut |e| events.push(e));
     }
@@ -34,7 +39,7 @@ fn finals(events: &[Event]) -> Vec<&str> {
 #[test]
 fn vad_mode_segments_and_transcribes() {
     for model in ["parakeet-tdt-110m", "nemotron-streaming-0.6b"] {
-        let Some(events) = run(model, Mode::Vad) else {
+        let Some(events) = run(model, Mode::Vad, 1.0) else {
             eprintln!("skipping {model}: models not installed");
             continue;
         };
@@ -46,12 +51,17 @@ fn vad_mode_segments_and_transcribes() {
     }
 }
 
+/// Push-to-talk with speech right up to both edges: no word may be clipped.
 #[test]
 fn hold_mode_is_one_utterance() {
-    let Some(events) = run("parakeet-tdt-110m", Mode::Hold) else {
-        return;
-    };
-    let finals = finals(&events);
-    assert_eq!(finals.len(), 1, "{finals:?}");
-    assert!(finals[0].to_lowercase().contains("brothels"));
+    for model in ["parakeet-tdt-110m", "nemotron-streaming-0.6b"] {
+        let Some(events) = run(model, Mode::Hold, 0.0) else {
+            continue;
+        };
+        let finals = finals(&events);
+        assert_eq!(finals.len(), 1, "{model}: {finals:?}");
+        let text = finals[0].to_lowercase();
+        assert!(text.starts_with("after early"), "{model}: {text}");
+        assert!(text.trim_end_matches('.').ends_with("brothels"), "{model}: {text}");
+    }
 }
