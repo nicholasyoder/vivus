@@ -36,7 +36,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] Speech on both speakers (`MONO` channel position), louder TTS (levelled to ~-16 LUFS), other apps ducked while speaking (2026-11-24, `e85b370`) — [speech.md](speech.md#tts)
 - [x] STT fixes from real use: streaming edge padding, `parakeet-tdt-0.6b` as standard tier, one-word barge-in (2026-11-24, `e5bdfa3`, `65c1a75`, `492159f`) — [speech.md](speech.md#tiers)
 - [x] `[audio] record_utterances`: save each utterance as heard, with its transcript (2026-11-24, `4189315`) — [speech.md](speech.md#recording-utterances)
-- [x] Echo cancellation quality: stereo reference, no noise suppression, duck other apps while the user talks; bench in `scripts/aec-bench/` (2026-11-24, `HASH`) — [speech.md](speech.md#echo-cancellation-quality)
+- [x] Echo cancellation quality: stereo reference, no noise suppression, duck other apps while the user talks; bench in `scripts/aec-bench/` (2026-11-24, `113e991`) — [speech.md](speech.md#echo-cancellation-quality)
 - [ ] STT on the raw mic while we're not speaking (VAD/barge-in stay on the cancelled signal); keep the canceller converged between push-to-talk presses — [speech.md](speech.md#echo-cancellation-quality)
 - [ ] Warn when the mic input clips (log, later the settings page's level meter) — [speech.md](speech.md#echo-cancellation-quality)
 - [ ] STT accuracy on real speech: compare models (Whisper, Qwen3-ASR) on recorded utterances; remote STT if local isn't enough — [speech.md](speech.md#recording-utterances)
