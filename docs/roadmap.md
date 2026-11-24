@@ -43,6 +43,14 @@ using only standard protocols.
 - [ ] Clipboard read/write via `wlr-data-control`
 - [ ] Push-to-talk and toggle-listen through the `GlobalShortcuts` portal (`vivusctl` stays the fallback)
 
+### Settings
+
+- [ ] `org.vivus.Settings` D-Bus interface (`Get`/`Set`/`Changed`); daemon writes config with `toml_edit`, watches the file and reloads live — [settings.md](settings.md#d-bus)
+- [ ] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon — [settings.md](settings.md#audio-devices)
+- [ ] Sidebar settings page: input/output device pickers, mic level meter, end-of-turn silence — [settings.md](settings.md)
+- [ ] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice — [settings.md](settings.md#roles-and-providers)
+- [ ] Add/edit providers (base URL, API key) from the sidebar, once key storage is decided
+
 ### Sidebar and packaging
 
 - [ ] Sidebar polish: document history UX, code blocks, images, show/hide behaviour
@@ -90,7 +98,7 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 - Wake word as well as push-to-talk? Probably later and optional.
 - Should the router have a small local fallback for offline use? (Speech is already local.)
-- Where to store API keys: environment variables, Secret Service, or the config file?
+- Where to store API keys: environment variables, Secret Service, or the config file? (Blocks editing providers in the sidebar.)
 - How much conversation and sidebar history to keep, and where (documents are in memory only today).
 - Which actions need spoken or visual confirmation, and how to keep screen or web text from triggering actions (treat it as data; confirm what it suggests).
 
