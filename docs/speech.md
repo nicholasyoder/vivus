@@ -322,8 +322,10 @@ Local speech means always-on listening costs no network round trips.
 the recognizer for each utterance (after echo cancellation, preroll included;
 also one-word bursts it kept) to `~/.local/share/vivus/recordings/<UTC
 time>.wav`, 16 kHz mono, and append `file, model, transcript` to
-`transcripts.tsv` there. Use it to hear what the mic chain delivers and to
-re-run other models on real speech:
+`transcripts.tsv` there. `[debug] transcribe_only = true` skips the reply (no
+LLM call, no speech), so test phrases can follow each other without waiting.
+Use them to hear what the mic chain delivers and to re-run other models on
+real speech:
 
 ```sh
 cd ~/.local/share/vivus/recordings

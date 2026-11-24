@@ -30,6 +30,16 @@ pub struct Config {
     pub roles: Roles,
     #[serde(default)]
     pub audio: Audio,
+    #[serde(default)]
+    pub debug: Debug,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Debug {
+    /// Show what was heard but don't answer it (no LLM, no speech), for
+    /// testing recognition quickly.
+    pub transcribe_only: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

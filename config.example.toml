@@ -74,3 +74,8 @@ duck_volume = 0.3
 # Save each utterance as the recognizer heard it (after echo cancellation) to
 # ~/.local/share/vivus/recordings, with transcripts.tsv. For debugging accuracy.
 record_utterances = false
+
+[debug]
+# Transcribe what you say but don't answer it (no LLM call, no speech), to
+# test recognition quickly. Pairs well with [audio] record_utterances.
+transcribe_only = false

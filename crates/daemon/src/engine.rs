@@ -225,8 +225,11 @@ impl Engine {
                 }
             }
             Event::Partial(text) => self.transcript("user", &text, false).await?,
-            Event::Final(text) if text.is_empty() => {
-                self.transcript("user", "", true).await?;
+            Event::Final(text) if text.is_empty() || self.config.debug.transcribe_only => {
+                if !text.is_empty() {
+                    tracing::info!("heard (transcribe only): {text}");
+                }
+                self.transcript("user", &text, true).await?;
                 if self.listen_mode.is_none() {
                     self.set_state(AssistantState::Idle).await?;
                 }
