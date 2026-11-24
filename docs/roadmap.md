@@ -37,7 +37,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] STT fixes from real use: streaming edge padding, `parakeet-tdt-0.6b` as standard tier, one-word barge-in (2026-11-24, `e5bdfa3`, `65c1a75`, `492159f`) — [speech.md](speech.md#tiers)
 - [x] `[audio] record_utterances`: save each utterance as heard, with its transcript (2026-11-24, `4189315`) — [speech.md](speech.md#recording-utterances)
 - [x] Echo cancellation quality: stereo reference, no noise suppression, duck other apps while the user talks; bench in `scripts/aec-bench/` (2026-11-24, `113e991`) — [speech.md](speech.md#echo-cancellation-quality)
-- [ ] Keep the mic and canceller warm between listens (onboard inputs' wake-up thump clips the first ~1.5 s; the canceller restarts unconverged) — [speech.md](speech.md#echo-cancellation-quality)
+- [ ] Keep the mic and canceller warm between listens (onboard inputs' wake-up thump clips the first ~1.5 s; the canceller restarts unconverged) — [speech.md](speech.md#keeping-the-mic-warm)
 - [ ] Warn when the mic input clips (log, later the settings page's level meter) — [speech.md](speech.md#echo-cancellation-quality)
 - [ ] STT accuracy on real speech: compare models (Whisper, Qwen3-ASR) on recorded utterances; remote STT if local isn't enough — [speech.md](speech.md#recording-utterances)
 

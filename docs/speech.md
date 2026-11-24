@@ -361,7 +361,51 @@ Word error rate, music at about the voice's level (−24 dBFS RMS at the mic):
   thump: full scale for ~1.5 s, settled after ~4 s. PipeWire suspends idle
   nodes after 5 s and we only capture while listening, so speech right after
   listening starts (push-to-talk especially) is clipped. Workaround: a
-  WirePlumber rule with `session.suspend-timeout-seconds = 0` for that source.
+  WirePlumber rule with `session.suspend-timeout-seconds = 0` for that source
+  (see [Keeping the mic warm](#keeping-the-mic-warm)).
+
+### Keeping the mic warm
+
+Roadmap item: no clipped or unconverged start when listening begins, without
+user setup. Two separate problems:
+
+1. **Wake-up thump** (hardware, onboard inputs like the ALC897): fixed on the
+   dev machine (2026-11-24) by
+   `~/.config/wireplumber/wireplumber.conf.d/51-mic-no-suspend.conf`; the node
+   now sits `idle` instead of `suspended`, and recording right after 7 s unused
+   showed no thump (peak 0.13 vs full scale before). Remove that file
+   (`systemctl --user restart wireplumber`) to reproduce the problem.
+
+   ```
+   monitor.alsa.rules = [
+     {
+       matches = [ { node.name = "alsa_input.pci-0000_0a_00.4.analog-stereo" } ]
+       actions = { update-props = { session.suspend-timeout-seconds = 0 } }
+     }
+   ]
+   ```
+2. **Canceller convergence.** The module is loaded once (capture spawn) but
+   its nodes suspend while our capture stream is inactive (`set_active` in
+   `crates/audio/src/capture.rs`). Unverified: whether suspend/resume resets
+   AEC3's state, and how long reconvergence costs on the real room. Measure
+   first: replay a `record-room.sh` take through `scripts/aec-bench/run.sh`
+   while toggling the capture between phrases (or compare WER of the first
+   phrase after a fresh start vs later ones). In the simulated bench, the
+   first clips after 2.5 s of music were the worst.
+
+Options (privacy is the tradeoff):
+
+- **Always-on capture**, audio discarded while not listening: fixes both on
+  any machine, but the desktop's mic-in-use indicator stays on permanently.
+- **Keep the input device from suspending** from vivus (what the rule does,
+  but automatic; e.g. set the property on the device node, or ship the rule)
+  and keep the canceller's nodes alive: no permanent indicator; fixes the
+  thump; convergence depends on (2).
+- **Warm up on demand** (start capture the moment listening is likely, drop
+  the thump): cheapest, partial, since people talk as soon as they press.
+
+Leaning: measure (2); if relearning costs no more than a word, the second
+option is enough.
 - **Real-room scenes.** `scripts/aec-bench/record-room.sh` records the sink's
   monitor and the raw mic in one stream (run.sh's scene format) while you read
   `prompts.txt` over music, so settings can be compared on the real room
