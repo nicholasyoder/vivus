@@ -2,7 +2,21 @@
 whole run (so it doesn't depend on how the VAD split utterances).
 Usage: wer.py truth.txt hyp.txt"""
 import sys, re
-def norm(s): return re.sub(r"[^a-z0-9' ]", " ", s.lower()).split()
+ONES = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split()
+TENS = "_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()
+def say(n):
+    n = int(n)
+    if n < 20: return ONES[n]
+    if n < 100: return TENS[n // 10] + ("" if n % 10 == 0 else " " + ONES[n % 10])
+    return n_str if (n_str := str(n)) else ""
+def norm(s):
+    # STT writes numbers as digits ("6.30", "15%", "$87"); compare them as words.
+    s = s.lower()
+    s = re.sub(r"\$(\d+)", lambda m: m[1] + " dollars", s)
+    s = s.replace("%", " percent").replace("per cent", "percent")
+    s = re.sub(r"(\d+)[.:](\d\d)", lambda m: m[1] + " " + m[2], s)
+    s = re.sub(r"\d+", lambda m: " " + say(m[0]) + " ", s)
+    return re.sub(r"[^a-z0-9' ]", " ", s).split()
 truth = [norm(l) for l in open(sys.argv[1]) if l.strip()]
 hyp_line = open(sys.argv[2]).read()
 # listen_file prints: file: SpeechPossible SpeechStarted "text" ...

@@ -365,7 +365,20 @@ Word error rate, music at about the voice's level (−24 dBFS RMS at the mic):
 - **Real-room scenes.** `scripts/aec-bench/record-room.sh` records the sink's
   monitor and the raw mic in one stream (run.sh's scene format) while you read
   `prompts.txt` over music, so settings can be compared on the real room
-  instead of the simulated one.
+  instead of the simulated one. The reference channels are the monitor, taken
+  before the sink volume, so they don't change with it; only the mic does.
+  Results (2026-11-24, dev machine, after lowering the mic gain; `wer.py`
+  compares numbers as words; music in the mic between sentences, median):
+
+  | Take | Music in mic | No canceller | Old (mono ref, NS on) | New (stereo ref, NS off) |
+  |---|---|---|---|---|
+  | quieter | −38.5 dB | 2.6% | 14.6% | 2.6% |
+  | normal | −33.7 dB | 2.0% | 25.2% | 3.3% |
+  | louder | −27.1 dB | 1.3% | 76.2% | 4.0% |
+
+  The real room is far kinder than the simulated one: the new settings cost
+  at most a few words in 151, so raw-mic STT (roadmap) matters less than the
+  bench suggested. Still unmeasured on real audio: talking over our own TTS.
 
 Local speech means always-on listening costs no network round trips.
 
