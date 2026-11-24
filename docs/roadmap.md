@@ -18,24 +18,27 @@ using only standard protocols.
 
 - [x] Project skeleton: Cargo workspace, D-Bus contract, `vivusctl`, Widgets sidebar (2026-11-20, `5bc6738`)
 
-### Voice
-
-- [x] Voice input: PipeWire capture, Silero VAD, local streaming STT, live transcript in the sidebar (2026-11-23, `ffd138c`) — [speech.md](speech.md)
-- [x] Local TTS (Kitten / Kokoro via sherpa-onnx) with PipeWire playback, fed one sentence at a time; `speaking` state (2026-11-23, `3d66e65`) — [speech.md](speech.md#tts)
-- [ ] TTS fallback for out-of-lexicon words (dropped silently today): neural G2P and/or a user lexicon — [speech.md](speech.md#out-of-lexicon-words)
-- [ ] Echo cancellation (set up or auto-load PipeWire `module-echo-cancel`) and barge-in: speech during playback cancels TTS and LLM within ~200 ms — [speech.md](speech.md#barge-in)
-- [ ] Semantic end-of-turn check on partials, so the silence threshold can shrink; start the router speculatively — [speech.md](speech.md#turn-detection)
-- [ ] Remote STT provider (Groq Whisper, final-only) so `stt` has two providers
-- [ ] Capture downmixes all channels (a stereo mic currently links only `FL`)
-
 ### Inference
 
 - [ ] `vivus-inference`: OpenAI-compatible streaming chat client with tool calls — [inference.md](inference.md)
-- [ ] Router: one streaming call with `speak` / `show` / `escalate` tools and the speech-vs-sidebar rules; `speak` streams into TTS — [inference.md](inference.md#routing)
+- [ ] Router: one streaming call with `speak` / `show` / `escalate` tools and the speech-vs-sidebar rules (numbers as words until normalization lands); `speak` streams into TTS — [inference.md](inference.md#routing)
 - [ ] Escalation to `answer` and `agent`, including the Claude Code provider — [inference.md](inference.md#roles)
 - [ ] Context providers: time/date, locale, active window, clipboard — [architecture.md](architecture.md#daemon-internals)
 - [ ] Conversation memory: rolling history so follow-ups work
 - [ ] `web_search` and `fetch_url` with a configurable provider; sourced sidebar documents — [inference.md](inference.md#web-access)
+
+### Voice
+
+- [x] Voice input: PipeWire capture, Silero VAD, local streaming STT, live transcript in the sidebar (2026-11-23, `ffd138c`) — [speech.md](speech.md)
+- [x] Local TTS (Kitten / Kokoro via sherpa-onnx) with PipeWire playback, fed one sentence at a time; `speaking` state (2026-11-23, `3d66e65`) — [speech.md](speech.md#tts)
+- [ ] TTS text normalization: numbers, times, dates, units, currency, acronyms, abbreviations, URLs (all dropped today); log remaining OOV words — [speech.md](speech.md#out-of-lexicon-words)
+- [ ] Own phonemizer: lexicon lookup in Rust, `phoneme_codepoints` to sherpa; ARPAbet pronunciation file (learned + user entries) converted per model — [speech.md](speech.md#out-of-lexicon-words)
+- [ ] LLM pronunciation lookup for OOV words, started while the reply streams; cached in the learned lexicon; idle prefetch of app names and window titles — [speech.md](speech.md#out-of-lexicon-words)
+- [ ] Local neural G2P as the offline / over-deadline fallback for OOV words — [speech.md](speech.md#out-of-lexicon-words)
+- [ ] Echo cancellation (set up or auto-load PipeWire `module-echo-cancel`) and barge-in: speech during playback cancels TTS and LLM within ~200 ms — [speech.md](speech.md#barge-in)
+- [ ] Semantic end-of-turn check on partials, so the silence threshold can shrink; start the router speculatively — [speech.md](speech.md#turn-detection)
+- [ ] Remote STT provider (Groq Whisper, final-only) so `stt` has two providers
+- [ ] Capture downmixes all channels (a stereo mic currently links only `FL`)
 
 ### Desktop control (standard protocols)
 
@@ -97,6 +100,8 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 ## Open questions
 
+- Is ~1 s from end of speech to audio realistic for normal replies? Measure once the loop runs.
+
 - Wake word as well as push-to-talk? Probably later and optional.
 - Should the router have a small local fallback for offline use? (Speech is already local.)
 - Where to store API keys: environment variables, Secret Service, or the config file? (Blocks editing providers in the sidebar.)
@@ -104,6 +109,9 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 - Which actions need spoken or visual confirmation, and how to keep screen or web text from triggering actions (treat it as data; confirm what it suggests).
 
 ## Decided
+
+- Inference before the rest of the voice items, to get the live STT → LLM → TTS loop working first (2026-11-23).
+- OOV pronunciations come mainly from LLM lookup, cached; user entries override. A first sentence may wait a few seconds for a lookup (2026-11-23).
 
 - Sidebar uses Qt Widgets + QSS, not QML, so Forest's QSS themes can style it (2026-11-20).
 - Speech (VAD/STT/TTS) is local by default; LLM roles are remote by default (2026-11-23).

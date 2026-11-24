@@ -112,13 +112,38 @@ shrink, and lets the router start speculatively before you've definitely finishe
 
 ### Out-of-lexicon words
 
-The lexicons cover CMUdict plus extras (~168k entries), so product names, jargon
-and new words are missing, and an assistant says those a lot. Options:
-a neural G2P (e.g. a small ONNX grapheme-to-phoneme model) run on OOV words and
-passed through `GenerationConfig::phoneme_codepoints`; a user lexicon file
-merged with the shipped one (sherpa accepts a comma-separated lexicon list);
-or, as a last resort, spelling unknown words letter by letter. A neural G2P is
-the real fix; a user lexicon is cheap and useful alongside it.
+Sherpa's lexicon frontend drops every word it can't find, and does no text
+normalization. Tested 2026-11-23 on "It is 3:45 PM on Nov 23, 2026. Your GPU
+uses 12.5 GB, about 40% of the RAM. Dr. Smith emailed you about the API at
+vivus.org.": both models drop every number, `40%` and `GB`; Kitten also drops
+`GPU` and `vivus`, Kokoro `API` and `emailed`. Plan, in layers:
+
+1. **Normalization** (text → text, before sherpa): numbers, decimals, times,
+   dates, ordinals, percentages, currency, units, abbreviations (`Dr.`, `Nov`),
+   all-caps acronyms spelled as letters, URLs and paths. Log what's still OOV.
+   Until it lands, the router prompt asks for numbers and units as words.
+2. **Own phonemizer.** `phoneme_codepoints` replaces the whole sentence's input,
+   so per-word fixes mean phonemizing ourselves: load the lexicon in Rust, look
+   up each word, emit codepoints (punctuation and pauses included). This also
+   detects OOV words *before* synthesis, so nothing is dropped and re-said.
+   Pronunciations are stored as ARPAbet with stress (`HYPRLAND HH AY1 P ER0 L AE2
+   N D`): LLMs produce it reliably, it validates against a small symbol set, and
+   the ARPAbet → espeak-IPA (Kitten) and → misaki (Kokoro) tables can be learned
+   from words both lexicons share. One file of learned entries plus user
+   entries, which win.
+3. **LLM lookup.** Scan the reply as it streams and request pronunciations for
+   OOV words immediately (fast model, batched), so they're usually back before
+   their sentence is synthesized; later sentences have the previous sentence's
+   playback as slack. A first sentence may wait a few seconds for a lookup
+   rather than speak a word wrong. Results are cached forever, and at idle we
+   prefetch app names (`.desktop`), window titles and words from transcripts.
+   LLMs know real-world pronunciations ("nginx", "Kubernetes") that spelling
+   rules miss.
+4. **Local neural G2P** (small CMUdict-trained ARPAbet model) when offline or
+   past the deadline; a later LLM answer replaces its guess in the cache.
+
+The reply model could also annotate unusual names inline (misaki has a syntax
+for it), but it can't know what our lexicon lacks; an option, not the mechanism.
 
 Testing without speakers: create a null sink, set `[audio] output` to it, and
 record its monitor with `pw-record --target <sink> -P '{ stream.capture.sink=true }'`
