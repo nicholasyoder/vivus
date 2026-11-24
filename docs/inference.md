@@ -103,6 +103,36 @@ for a packing list **with no spoken content**, despite the prompt asking for a
 summary. The router needs a fallback: send the `show` result back and speak the
 follow-up's content, or say a canned line ("I've put that in the sidebar").
 
+### Implementation (`crates/daemon/src/router.rs`)
+
+- The engine runs each reply as a tokio task tagged with a generation; its
+  `ReplyEvent`s (`Text`, `Document`, `Done`) come back as `Command::Reply` and
+  stale generations are ignored. Cancel, listening again or a new request
+  aborts the task, which drops the stream and closes the request.
+- Text deltas go straight to the speaker (which splits sentences); the state
+  turns `speaking` at the first non-blank text.
+- Up to three rounds. A follow-up call is made only if nothing has been spoken
+  yet, or a tool needs an answer (`escalate`, bad arguments, unknown tool); the
+  last round sets `tool_choice: none`. If still nothing was said: "I've put
+  that in the sidebar" after a `show`, else an apology. Provider errors are
+  spoken as "couldn't reach the language model".
+- `escalate` is a stub until the [answer/agent roles](#roles) land: the model
+  is told it isn't available and says so.
+- `max_tokens = 1000` (Groq free tier limit). No conversation history or
+  context (time, active window) yet; those are their own roadmap items.
+
+### Live run (2026-11-24, Groq `openai/gpt-oss-20b`, Kokoro)
+
+| Request | Router | Spoken first text | TTS of first sentence |
+|---|---|---|---|
+| "what's the capital of Australia" | one call | 0.45 s | 0.44 s |
+| "packing list for a weekend hike" | silent `show`, then follow-up | 1.06 s | 0.81 s |
+| "latest news about AI" | silent `escalate`, then follow-up | 1.10 s | 0.71 s |
+
+gpt-oss-20b still calls tools without a spoken line first despite the prompt
+and examples, so the follow-up round costs about 0.5 s. For `escalate`, a canned
+filler spoken at once would be faster than waiting for a follow-up.
+
 ## Web access
 
 `web_search` and `fetch_url` tools with configurable providers (e.g. Brave,

@@ -1,4 +1,5 @@
 mod engine;
+mod router;
 mod service;
 mod speaker;
 mod voice;
@@ -53,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
         let _ = speaker_tx.send(Command::SpeakerReady(Box::new(speaker)));
     });
 
-    let engine = tokio::spawn(Engine::new(config, conn, shared).run(rx));
+    let engine = tokio::spawn(Engine::new(config, conn, tx, shared).run(rx));
 
     let mut sigterm = signal(SignalKind::terminate())?;
     tokio::select! {

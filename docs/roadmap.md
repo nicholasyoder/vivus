@@ -23,7 +23,7 @@ using only standard protocols.
 - [x] `vivus-inference`: OpenAI-compatible streaming chat client with tool calls (2026-11-23, `696b45d`) — [inference.md](inference.md)
 - [x] Smoke-test the client against Groq and nano-gpt with real keys (`--example chat`) (2026-11-23, `658a656`) — [inference.md](inference.md#smoke-test-2026-11-23)
 - [ ] Router: one streaming call; content is speech and streams into TTS; `show` / `escalate` tools; the speech-vs-sidebar rules (numbers as words until normalization lands) — [inference.md](inference.md#routing)
-- [ ] Escalation to `answer` and `agent`, including the Claude Code provider — [inference.md](inference.md#roles)
+- [ ] Escalation to `answer` and `agent`, including the Claude Code provider; canned filler when the router escalates silently — [inference.md](inference.md#roles)
 - [ ] Context providers: time/date, locale, active window, clipboard — [architecture.md](architecture.md#daemon-internals)
 - [ ] Conversation memory: rolling history so follow-ups work
 - [ ] `web_search` and `fetch_url` with a configurable provider; sourced sidebar documents — [inference.md](inference.md#web-access)

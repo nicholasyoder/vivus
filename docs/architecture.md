@@ -46,11 +46,11 @@ are prefixed `vivus_` (e.g. `vivus_toplevel_info_v1`); config is
 crates/
   core/        config, assistant state, sidebar documents (later: orchestration, tool registry)
   dbus/        D-Bus names and client proxies, mirrors dbus/*.xml
-  daemon/      vivus-daemon: D-Bus service, engine, voice worker
+  daemon/      vivus-daemon: D-Bus service, engine, router, voice and TTS workers
   ctl/         vivusctl
   audio/       PipeWire capture (later playback)
   speech/      sherpa-onnx VAD, STT (later TTS); utterance listener
-  inference/   LLM provider clients (stub)
+  inference/   LLM provider clients (OpenAI-compatible streaming)
   wayland/     standard-protocol compositor backend (stub)
 sidebar/       CMake + Qt6 Widgets project; data/sidebar.qss is the default style
 dbus/          D-Bus interface XML: the contract shared with every UI

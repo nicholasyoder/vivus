@@ -1,13 +1,16 @@
-//! Owns assistant behaviour. Inference isn't wired up yet: a final transcript
-//! (or `Ask`) produces a placeholder sidebar document and a spoken reply.
+//! Owns assistant behaviour. A final transcript (or `Ask`) starts a reply: the
+//! router runs as a task whose events come back as `Command::Reply`, tagged
+//! with a generation so events from a cancelled reply are ignored.
 
 use std::sync::{Arc, Mutex};
 
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::task::AbortHandle;
 use vivus_core::{AssistantState, Config, DocumentStore};
 use vivus_speech::{Event, Mode};
 use zbus::Connection;
 
+use crate::router::{ReplyEvent, Router};
 use crate::service;
 use crate::speaker::Speaker;
 use crate::voice::Voice;
@@ -33,34 +36,69 @@ pub enum Command {
     Speech(Event),
     /// The spoken reply has finished playing.
     SpeakingFinished,
+    Reply {
+        generation: u64,
+        event: ReplyEvent,
+    },
+}
+
+/// The reply in progress.
+struct Reply {
+    generation: u64,
+    /// `None` for a fixed line spoken without the router.
+    task: Option<AbortHandle>,
+    text: String,
+    /// TTS has been given text, so `SpeakingFinished` will follow `end()`.
+    speaking: bool,
 }
 
 pub struct Engine {
-    #[allow(dead_code)] // used once inference lands
     config: Config,
     conn: Connection,
+    tx: UnboundedSender<Command>,
     shared: Arc<Mutex<Shared>>,
     voice: Option<Voice>,
     speaker: Option<Speaker>,
     /// Set while in a listening mode, including while paused during a reply.
     listen_mode: Option<Mode>,
+    /// Built on first use and kept, so its HTTP connection is reused.
+    router: Option<Arc<Router>>,
+    reply: Option<Reply>,
+    generation: u64,
 }
 
 impl Engine {
-    pub fn new(config: Config, conn: Connection, shared: Arc<Mutex<Shared>>) -> Self {
+    pub fn new(
+        config: Config,
+        conn: Connection,
+        tx: UnboundedSender<Command>,
+        shared: Arc<Mutex<Shared>>,
+    ) -> Self {
         Self {
             config,
             conn,
+            tx,
             shared,
             voice: None,
             speaker: None,
             listen_mode: None,
+            router: None,
+            reply: None,
+            generation: 0,
         }
     }
 
     pub async fn run(mut self, mut rx: UnboundedReceiver<Command>) {
         while let Some(cmd) = rx.recv().await {
-            if !matches!(cmd, Command::Speech(Event::Partial(_))) {
+            let chatty = matches!(
+                cmd,
+                Command::Speech(Event::Partial(_))
+                    | Command::Reply {
+                        event: ReplyEvent::Text(_),
+                        ..
+                    }
+            );
+            if !chatty {
                 tracing::debug!(?cmd, "command");
             }
             if matches!(cmd, Command::Quit) {
@@ -90,7 +128,8 @@ impl Engine {
                 Err(e) => tracing::error!("speech output unavailable: {e:#}"),
             },
             Command::SpeakingFinished => {
-                if self.state() == AssistantState::Speaking {
+                // A reply still in progress means this is from an older, cancelled one.
+                if self.state() == AssistantState::Speaking && self.reply.is_none() {
                     self.after_reply().await?;
                 }
             }
@@ -114,23 +153,25 @@ impl Engine {
                     self.stop_listening().await?;
                 }
             }
-            Command::Cancel => {
-                self.stop_speaking();
-                self.stop_listening().await?;
-            }
+            Command::Cancel => self.stop_listening().await?,
             Command::Quit => {} // handled in run()
             Command::Ask(text) => {
                 self.transcript("user", &text, true).await?;
                 self.respond(&text).await?;
             }
             Command::Speech(event) => self.on_speech(event).await?,
+            Command::Reply { generation, event } => {
+                if self.reply.as_ref().is_some_and(|r| r.generation == generation) {
+                    self.on_reply(event).await?;
+                }
+            }
         }
         Ok(())
     }
 
     async fn start_listening(&mut self, mode: Mode) -> zbus::Result<()> {
         // Talking over a reply interrupts it.
-        self.stop_speaking();
+        self.cancel_reply();
         let Some(voice) = &self.voice else {
             tracing::warn!("listen requested but voice isn't available (see earlier errors)");
             return Ok(());
@@ -141,7 +182,7 @@ impl Engine {
     }
 
     async fn stop_listening(&mut self) -> zbus::Result<()> {
-        self.stop_speaking();
+        self.cancel_reply();
         if let Some(v) = &self.voice {
             v.stop();
         }
@@ -168,33 +209,93 @@ impl Engine {
         Ok(())
     }
 
-    /// Placeholder until the router lands.
-    async fn respond(&self, text: &str) -> zbus::Result<()> {
+    async fn respond(&mut self, text: &str) -> zbus::Result<()> {
+        self.cancel_reply();
         self.set_state(AssistantState::Thinking).await?;
 
-        let markdown =
-            format!("> {text}\n\n*No inference backend yet; this document is a placeholder.*\n");
-        let doc = self.shared.lock().unwrap().documents.create(text, markdown).clone();
-        self.document_changed(&doc).await?;
-        self.request_sidebar("show").await?;
-        self.speak("Inference isn't wired up yet. I've put your request in the sidebar.")
-            .await
+        let router = match self.router() {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("router unavailable: {e:#}");
+                return self.say_only("I can't answer yet: no language model is set up.").await;
+            }
+        };
+        self.generation += 1;
+        let generation = self.generation;
+        let (tx, shared, text) = (self.tx.clone(), self.shared.clone(), text.to_owned());
+        let task = tokio::spawn(async move {
+            router
+                .respond(&text, &shared, |event| {
+                    let _ = tx.send(Command::Reply { generation, event });
+                })
+                .await;
+        });
+        self.reply = Some(Reply {
+            generation,
+            task: Some(task.abort_handle()),
+            text: String::new(),
+            speaking: false,
+        });
+        Ok(())
     }
 
-    /// Speaks a whole reply; falls straight through to `after_reply` without TTS.
-    async fn speak(&self, reply: &str) -> zbus::Result<()> {
-        self.transcript("assistant", reply, true).await?;
-        let Some(speaker) = &self.speaker else {
-            return self.after_reply().await;
-        };
-        // No echo cancellation yet, so the mic would hear the reply.
-        if let (Some(_), Some(voice)) = (self.listen_mode, &self.voice) {
-            voice.stop();
+    fn router(&mut self) -> anyhow::Result<Arc<Router>> {
+        if self.router.is_none() {
+            self.router = Some(Arc::new(Router::from_config(&self.config)?));
         }
-        self.set_state(AssistantState::Speaking).await?;
-        speaker.say(reply);
-        speaker.end();
+        Ok(self.router.clone().unwrap())
+    }
+
+    async fn on_reply(&mut self, event: ReplyEvent) -> zbus::Result<()> {
+        match event {
+            ReplyEvent::Text(t) => {
+                let reply = self.reply.as_mut().unwrap();
+                reply.text.push_str(&t);
+                let start = !reply.speaking && !reply.text.trim().is_empty();
+                let text = reply.text.trim().to_owned();
+                if let Some(speaker) = &self.speaker {
+                    if start {
+                        // No echo cancellation yet, so the mic would hear the reply.
+                        if let (Some(_), Some(voice)) = (self.listen_mode, &self.voice) {
+                            voice.stop();
+                        }
+                        self.reply.as_mut().unwrap().speaking = true;
+                        self.set_state(AssistantState::Speaking).await?;
+                    }
+                    speaker.say(&t);
+                }
+                if !text.is_empty() {
+                    self.transcript("assistant", &text, false).await?;
+                }
+            }
+            ReplyEvent::Document(doc) => {
+                self.document_changed(&doc).await?;
+                self.request_sidebar("show").await?;
+            }
+            ReplyEvent::Done => {
+                let reply = self.reply.take().unwrap();
+                self.transcript("assistant", reply.text.trim(), true).await?;
+                match &self.speaker {
+                    Some(speaker) if reply.speaking => speaker.end(),
+                    _ => self.after_reply().await?,
+                }
+            }
+        }
         Ok(())
+    }
+
+    /// A fixed spoken line outside the router (e.g. when it isn't configured).
+    async fn say_only(&mut self, line: &str) -> zbus::Result<()> {
+        self.generation += 1;
+        let generation = self.generation;
+        self.reply = Some(Reply {
+            generation,
+            task: None,
+            text: String::new(),
+            speaking: false,
+        });
+        self.on_reply(ReplyEvent::Text(line.into())).await?;
+        self.on_reply(ReplyEvent::Done).await
     }
 
     /// Back to listening in conversation mode, else idle.
@@ -208,7 +309,11 @@ impl Engine {
         }
     }
 
-    fn stop_speaking(&self) {
+    /// Drops the reply in progress: the LLM request closes and TTS goes quiet.
+    fn cancel_reply(&mut self) {
+        if let Some(task) = self.reply.take().and_then(|r| r.task) {
+            task.abort();
+        }
         if let Some(s) = &self.speaker {
             s.stop();
         }
