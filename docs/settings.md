@@ -42,8 +42,8 @@ As with `org.vivus.Assistant`, the methods only enqueue engine commands.
 `crates/audio` enumerates PipeWire nodes from the registry
 (`Audio/Source`, later `Audio/Sink` for TTS playback) and tracks add/remove.
 Choosing a device sets `audio.input` / `audio.output` to the node name. "Default"
-means unset, which follows the system default. The echo-cancel source shows
-up as a normal device but is labelled as such. A level meter next to the input
+means unset, which follows the system default. Our own echo-cancel nodes
+(`vivus-echo-cancel-*`) are hidden from the pickers. A level meter next to the input
 picker shows whether the mic is actually working.
 
 ## Roles and providers

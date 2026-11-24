@@ -146,6 +146,15 @@ impl Speaker {
         self.playback.stop();
     }
 
+    /// Hold playback (a possible interruption); `resume` or `stop` follows.
+    pub fn pause(&self) {
+        self.playback.pause();
+    }
+
+    pub fn resume(&self) {
+        self.playback.resume();
+    }
+
     /// Looks up unknown words in `text` in the background (e.g. what the user said).
     pub fn prefetch(&self, text: &str) {
         self.lookup(text, false);

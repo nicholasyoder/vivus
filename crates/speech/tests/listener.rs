@@ -38,7 +38,7 @@ fn vad_mode_segments_and_transcribes() {
             eprintln!("skipping {model}: models not installed");
             continue;
         };
-        assert_eq!(events.first(), Some(&Event::SpeechStarted), "{model}");
+        assert_eq!(events[..2], [Event::SpeechPossible, Event::SpeechStarted], "{model}");
         assert!(events.iter().any(|e| matches!(e, Event::Partial(_))), "{model}: no partials");
         let text = finals(&events).join(" ").to_lowercase();
         assert!(text.starts_with("after early nightfall"), "{model}: {text}");

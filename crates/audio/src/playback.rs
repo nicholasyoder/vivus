@@ -23,6 +23,7 @@ enum Control {
     Play(Vec<f32>),
     End,
     Stop,
+    Pause(bool),
     Quit,
 }
 
@@ -44,6 +45,15 @@ impl PlaybackSender {
     /// Drop queued audio and go quiet now. Cancels a pending `end`.
     pub fn stop(&self) {
         let _ = self.0.send(Control::Stop);
+    }
+
+    /// Hold the queue and play silence until `resume` (or `stop`).
+    pub fn pause(&self) {
+        let _ = self.0.send(Control::Pause(true));
+    }
+
+    pub fn resume(&self) {
+        let _ = self.0.send(Control::Pause(false));
     }
 }
 
@@ -104,6 +114,7 @@ impl Drop for Playback {
 struct State {
     queue: VecDeque<f32>,
     active: bool,
+    paused: bool,
     /// `end()` received: finish once the queue is empty.
     ending: bool,
     /// Queue empty after `end()`; waiting for PipeWire's `drained`.
@@ -159,7 +170,10 @@ fn run(
                     let n = if requested > 0 { requested.min(max) } else { max };
                     // Underruns between sentences play as silence.
                     for out in bytes[..n * 4].chunks_exact_mut(4) {
-                        let s = st.queue.pop_front().unwrap_or(0.0);
+                        let s = match st.paused {
+                            true => 0.0,
+                            false => st.queue.pop_front().unwrap_or(0.0),
+                        };
                         out.copy_from_slice(&s.to_le_bytes());
                     }
                     n
@@ -172,7 +186,7 @@ fn run(
             *chunk.size_mut() = (frames * 4) as u32;
             drop(buffer);
 
-            if st.ending && st.queue.is_empty() {
+            if st.ending && st.queue.is_empty() && !st.paused {
                 st.draining = true;
                 if let Err(e) = stream.flush(true) {
                     tracing::warn!("playback drain: {e}");
@@ -246,9 +260,11 @@ fn run(
                 on_finished();
             }
             Control::End => st.ending = true,
+            Control::Pause(paused) => st.paused = paused,
             Control::Stop => {
                 st.queue.clear();
                 st.ending = false;
+                st.paused = false;
                 if st.draining {
                     st.draining = false;
                     let _ = ctl_stream.flush(false);

@@ -6,7 +6,7 @@ use std::sync::mpsc;
 
 use anyhow::{Context, bail};
 use tokio::sync::mpsc::UnboundedSender;
-use vivus_audio::{Capture, CaptureOptions};
+use vivus_audio::{Capture, CaptureOptions, EchoCancelOptions};
 use vivus_core::config::{Config, Provider, Role};
 use vivus_speech::{Listener, Mode, VadOptions, stt};
 
@@ -90,6 +90,9 @@ impl Voice {
         let capture = Capture::spawn(
             CaptureOptions {
                 target: config.audio.input.clone(),
+                echo_cancel: config.audio.echo_cancel.then(|| EchoCancelOptions {
+                    reference: config.audio.output.clone(),
+                }),
             },
             move |samples| {
                 let _ = audio_tx.send(Msg::Audio(samples));
@@ -108,6 +111,11 @@ impl Voice {
     pub fn finish(&self) {
         self.capture.set_active(false);
         let _ = self.tx.send(Msg::Finish);
+    }
+
+    /// The mic doesn't hear our own speech, so it can stay open while speaking.
+    pub fn echo_cancelled(&self) -> bool {
+        self.capture.echo_cancelled()
     }
 
     /// Stop listening and discard any utterance in progress.

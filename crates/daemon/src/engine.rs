@@ -61,6 +61,8 @@ pub struct Engine {
     speaker: Option<Speaker>,
     /// Set while in a listening mode, including while paused during a reply.
     listen_mode: Option<Mode>,
+    /// The mic was stopped for a reply because there's no echo cancellation.
+    mic_paused: bool,
     /// Built on first use and kept, so its HTTP connection is reused.
     router: Option<Arc<Router>>,
     reply: Option<Reply>,
@@ -82,6 +84,7 @@ impl Engine {
             voice: None,
             speaker: None,
             listen_mode: None,
+            mic_paused: false,
             router: None,
             reply: None,
             generation: 0,
@@ -178,6 +181,7 @@ impl Engine {
         };
         voice.start(mode);
         self.listen_mode = Some(mode);
+        self.mic_paused = false;
         self.set_state(AssistantState::Listening).await
     }
 
@@ -187,12 +191,37 @@ impl Engine {
             v.stop();
         }
         self.listen_mode = None;
+        self.mic_paused = false;
         self.set_state(AssistantState::Idle).await
     }
 
     async fn on_speech(&mut self, event: Event) -> zbus::Result<()> {
         match event {
-            Event::SpeechStarted => {}
+            // Pause first, so a cough costs a hiccup rather than the reply.
+            Event::SpeechPossible | Event::NotSpeech
+                if self.state() == AssistantState::Speaking
+                    && self.listen_mode == Some(Mode::Vad) =>
+            {
+                if let Some(s) = &self.speaker {
+                    if event == Event::SpeechPossible {
+                        tracing::debug!("possible speech: pausing");
+                        s.pause();
+                    } else {
+                        tracing::debug!("not speech: resuming");
+                        s.resume();
+                    }
+                }
+            }
+            Event::SpeechPossible | Event::NotSpeech => {}
+            Event::SpeechStarted => {
+                // Barge-in: talking over a reply (or its thinking) drops it.
+                let busy = self.reply.is_some() || self.state() == AssistantState::Speaking;
+                if busy && self.listen_mode == Some(Mode::Vad) {
+                    tracing::info!("barge-in: speech during {}", self.state());
+                    self.cancel_reply();
+                    self.set_state(AssistantState::Listening).await?;
+                }
+            }
             Event::Partial(text) => self.transcript("user", &text, false).await?,
             Event::Final(text) if text.is_empty() => {
                 self.transcript("user", "", true).await?;
@@ -259,9 +288,12 @@ impl Engine {
                 let text = reply.text.trim().to_owned();
                 if let Some(speaker) = &self.speaker {
                     if start {
-                        // No echo cancellation yet, so the mic would hear the reply.
-                        if let (Some(_), Some(voice)) = (self.listen_mode, &self.voice) {
+                        // Without echo cancellation the mic would hear the reply.
+                        if let (Some(_), Some(voice)) = (self.listen_mode, &self.voice)
+                            && !voice.echo_cancelled()
+                        {
                             voice.stop();
+                            self.mic_paused = true;
                         }
                         self.reply.as_mut().unwrap().speaking = true;
                         self.set_state(AssistantState::Speaking).await?;
@@ -308,10 +340,13 @@ impl Engine {
     }
 
     /// Back to listening in conversation mode, else idle.
-    async fn after_reply(&self) -> zbus::Result<()> {
+    async fn after_reply(&mut self) -> zbus::Result<()> {
         match (self.listen_mode, &self.voice) {
             (Some(mode), Some(voice)) => {
-                voice.start(mode);
+                // Restarting would drop speech already in progress.
+                if std::mem::take(&mut self.mic_paused) {
+                    voice.start(mode);
+                }
                 self.set_state(AssistantState::Listening).await
             }
             _ => self.set_state(AssistantState::Idle).await,

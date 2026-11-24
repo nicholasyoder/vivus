@@ -16,7 +16,7 @@ engine reply text ─► vivus-tts thread: SentenceSplitter ─► Synthesizer (
    └─► PipeWire playback (vivus-playback thread, 24 kHz mono) ─► SpeakingFinished ─► engine
 ```
 
-- **Capture** (`crates/audio`): fixed F32 / 16 kHz / mono format so PipeWire's adapter resamples and downmixes. `[audio] input` targets a specific node (e.g. the echo-cancel source); otherwise the default source.
+- **Capture** (`crates/audio`): fixed F32 / 16 kHz / mono format so PipeWire's adapter resamples and downmixes. `[audio] input` targets a specific node; otherwise the default source. With `[audio] echo_cancel` (default on), capture goes through the echo canceller ([Barge-in](#barge-in)).
 - **Listener** (`crates/speech/src/listener.rs`), two modes:
   - *Vad* (toggle-listen, conversation): VAD splits utterances. ~0.5 s of preroll is kept so the first syllable isn't lost.
   - *Hold* (push-to-talk): everything until release is one utterance, so pauses don't split it.
@@ -109,9 +109,10 @@ shrink, and lets the router start speculatively before you've definitely finishe
 - **Daemon** (`crates/daemon/src/speaker.rs`): own `vivus-tts` thread so STT keeps
   running during synthesis (needed for barge-in). Each reply has a generation;
   `stop()` bumps it under a lock, so audio from a cancelled reply never reaches
-  playback. State is `speaking` until `SpeakingFinished`. Until echo cancellation
-  lands, the mic is paused while speaking in conversation mode; starting to
-  listen or `Cancel` stops speech.
+  playback. State is `speaking` until `SpeakingFinished`. With echo cancellation the
+  mic stays open while speaking ([Barge-in](#barge-in)); without it, it's
+  paused while speaking in conversation mode. Starting to listen or `Cancel`
+  stops speech.
 
 ### Out-of-lexicon words
 
@@ -231,11 +232,45 @@ record its monitor with `pw-record --target <sink> -P '{ stream.capture.sink=tru
 ## Barge-in
 
 Interrupting by talking needs VAD and STT running during playback, which needs
-echo cancellation so the assistant doesn't hear itself: PipeWire's
-`module-echo-cancel`, either documented or loaded automatically, with capture
-targeting its source. Speech detected during playback cancels TTS and the LLM
-stream (target ~200 ms). Local speech means always-on listening costs no
-network round trips.
+echo cancellation so the assistant doesn't hear itself (done 2026-11-24).
+
+- **Echo cancellation** (`crates/audio/src/capture.rs`): the capture thread
+  loads `libpipewire-module-echo-cancel` (WebRTC AEC) into its own PipeWire
+  context, so it needs no setup and disappears with the daemon. It runs in
+  **monitor mode**: the reference is the monitor of the output sink
+  (`[audio] output`, else the default sink) rather than a sink apps must play
+  into. So it cancels *everything* the speakers play (music, videos, calls), not
+  just our TTS, and nothing gets rerouted. Mono, to halve the cost. Capture
+  targets `vivus-echo-cancel-source`. While our stream is inactive the module's
+  nodes suspend and the mic is closed. If the module fails to load, the daemon
+  falls back to pausing the mic while speaking. `[audio] echo_cancel = false`
+  turns it off, e.g. when `input` is already an echo-cancelled source.
+- **Two-stage detection** (`Listener`): a second Silero instance with
+  `min_speech` 64 ms emits `SpeechPossible`, which **pauses** playback (the
+  queue is held). The normal VAD (250 ms) confirming it as `SpeechStarted`
+  cancels the reply: TTS, the LLM stream, and the thinking phase too. If the
+  burst ends first (200 ms of silence) it emits `NotSpeech` and playback
+  resumes, so a cough or a door costs a short hiccup, not the reply. Only in
+  conversation (VAD) mode; in push-to-talk, pressing the key interrupts.
+- **Measured** with `scripts/fake-room.sh` (echo leaks from a virtual sink into
+  a virtual mic ~20 dB below the voice; no real acoustics), Kokoro/Kitten
+  speech as "you":
+  - Echo alone, TTS or synthetic music: −60 to −80 dB after cancellation; no
+    `SpeechPossible` during a reply with music playing.
+  - Talking over TTS or music: transcribed correctly except the first word,
+    which the canceller damages while both talk ("Stop" → "Snob", "Rob").
+    With the echo as loud as the voice it fails: speech over music is
+    suppressed entirely.
+  - Speech onset to `SpeechPossible`, offline on three clips: 140–280 ms
+    (100 ms more with a 100 ms `min_speech`; a lower threshold doesn't help:
+    Silero needs ~100 ms of a word first). End to end, onset to silent
+    speakers: 330 ms with a 100 ms `min_speech` (480 ms with no pause stage).
+    PipeWire and the canceller add little.
+  - A 200 ms speech fragment paused playback for 380 ms, then it resumed.
+- Not yet tried in a real room (speaker distortion and reverb make cancellation
+  worse than this loopback) or with real music with vocals.
+
+Local speech means always-on listening costs no network round trips.
 
 ## Testing without a microphone
 
@@ -248,6 +283,9 @@ pw-cat --playback --target 0 -P '{ node.name=vivus-play node.autoconnect=false }
 pw-link vivus-play:output_MONO vivus_test:input_MONO   # or output_FL
 pw-cli destroy <vivus_test node id>                    # afterwards
 ```
+
+For echo and barge-in, `scripts/fake-room.sh` adds a sink `vivus_spk` whose
+output leaks into a source `vivus_mic` (usage in the script).
 
 Run the daemon under `dbus-run-session` to keep it off your real session bus.
 `crates/speech/tests/listener.rs` covers the listener offline (skips without models).

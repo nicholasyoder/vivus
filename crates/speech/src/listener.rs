@@ -11,10 +11,14 @@ use crate::stt::SpeechRecognizer;
 use crate::{Error, SAMPLE_RATE};
 
 const VAD_WINDOW: usize = 512;
+/// Silence after `SpeechPossible` that makes it `NotSpeech`.
+const POSSIBLE_SILENCE: f32 = 0.2;
 
 #[derive(Debug, Clone)]
 pub struct VadOptions {
     pub threshold: f32,
+    /// Speech that raises [`Event::SpeechPossible`], before `min_speech` confirms it.
+    pub min_speech_possible: f32,
     /// Silence that ends an utterance; the main end-of-turn latency knob.
     pub min_silence: f32,
     pub min_speech: f32,
@@ -25,6 +29,7 @@ impl Default for VadOptions {
     fn default() -> Self {
         Self {
             threshold: 0.5,
+            min_speech_possible: 0.064,
             min_silence: 0.4,
             min_speech: 0.25,
             max_speech: 30.0,
@@ -34,6 +39,11 @@ impl Default for VadOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
+    /// A short burst of speech, possibly a cough or a door: enough to pause
+    /// a reply, not to cancel it. `SpeechStarted` or `NotSpeech` follows.
+    SpeechPossible,
+    /// The burst after `SpeechPossible` ended before it counted as speech.
+    NotSpeech,
     SpeechStarted,
     Partial(String),
     /// Empty when the utterance turned out to contain no words.
@@ -50,6 +60,9 @@ pub enum Mode {
 
 pub struct Listener {
     vad: VoiceActivityDetector,
+    /// Same model with a shorter `min_speech`, for `SpeechPossible`.
+    quick_vad: VoiceActivityDetector,
+    possible: bool,
     stt: Box<dyn SpeechRecognizer>,
     mode: Mode,
     /// Audio kept from before VAD fired, so the first syllable isn't lost.
@@ -69,23 +82,27 @@ impl Listener {
         if !model.exists() {
             return Err(Error::MissingFiles(model));
         }
-        let config = VadModelConfig {
-            silero_vad: SileroVadModelConfig {
-                model: Some(model.to_string_lossy().into_owned()),
-                threshold: opts.threshold,
-                min_silence_duration: opts.min_silence,
-                min_speech_duration: opts.min_speech,
-                window_size: VAD_WINDOW as i32,
-                max_speech_duration: opts.max_speech,
-            },
-            sample_rate: SAMPLE_RATE,
-            num_threads: 1,
-            ..Default::default()
+        let create = |threshold, min_speech, min_silence| {
+            let config = VadModelConfig {
+                silero_vad: SileroVadModelConfig {
+                    model: Some(model.to_string_lossy().into_owned()),
+                    threshold,
+                    min_silence_duration: min_silence,
+                    min_speech_duration: min_speech,
+                    window_size: VAD_WINDOW as i32,
+                    max_speech_duration: opts.max_speech,
+                },
+                sample_rate: SAMPLE_RATE,
+                num_threads: 1,
+                ..Default::default()
+            };
+            VoiceActivityDetector::create(&config, opts.max_speech + 5.0)
+                .ok_or_else(|| Error::LoadFailed(VAD_MODEL.into()))
         };
-        let vad = VoiceActivityDetector::create(&config, opts.max_speech + 5.0)
-            .ok_or_else(|| Error::LoadFailed(VAD_MODEL.into()))?;
         Ok(Self {
-            vad,
+            vad: create(opts.threshold, opts.min_speech, opts.min_silence)?,
+            quick_vad: create(opts.threshold, opts.min_speech_possible, POSSIBLE_SILENCE)?,
+            possible: false,
             stt,
             mode: Mode::Vad,
             preroll: VecDeque::new(),
@@ -129,6 +146,18 @@ impl Listener {
         let speech = self.vad.detected();
         // We track speech via detected(); the queued segments are unused.
         self.vad.clear();
+        if !self.in_utterance {
+            self.quick_vad.accept_waveform(window);
+            let quick = self.quick_vad.detected();
+            self.quick_vad.clear();
+            // SpeechStarted supersedes a pending SpeechPossible.
+            if speech {
+                self.possible = false;
+            } else if quick != self.possible {
+                self.possible = quick;
+                out(if quick { Event::SpeechPossible } else { Event::NotSpeech });
+            }
+        }
 
         if self.in_utterance {
             self.feed(window, out);
@@ -165,12 +194,16 @@ impl Listener {
         }
         self.in_utterance = false;
         self.vad.reset();
+        self.quick_vad.reset();
+        self.possible = false;
     }
 
     /// Drops audio and any utterance in progress (cancel / stop listening).
     pub fn reset(&mut self) {
         self.stt.reset();
         self.vad.reset();
+        self.quick_vad.reset();
+        self.possible = false;
         self.preroll.clear();
         self.window.clear();
         self.in_utterance = false;

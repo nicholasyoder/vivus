@@ -35,12 +35,15 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Audio {
-    /// PipeWire node to capture from, e.g. the echo-cancel source. Default source if unset.
+    /// PipeWire node to capture from. Default source if unset.
     pub input: Option<String>,
     /// PipeWire node to play speech to. Default sink if unset.
     pub output: Option<String>,
     /// Seconds of silence that end an utterance in conversation mode.
     pub end_of_turn_silence: f32,
+    /// Load PipeWire's echo canceller so the mic stays open while speaking
+    /// (barge-in). It removes everything the output sink plays, music included.
+    pub echo_cancel: bool,
 }
 
 impl Default for Audio {
@@ -49,6 +52,7 @@ impl Default for Audio {
             input: None,
             output: None,
             end_of_turn_silence: 0.4,
+            echo_cancel: true,
         }
     }
 }
