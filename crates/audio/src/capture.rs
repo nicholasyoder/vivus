@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
@@ -15,6 +17,9 @@ pub struct CaptureOptions {
     pub target: Option<String>,
     /// Run the mic through PipeWire's echo canceller, loaded into this process.
     pub echo_cancel: Option<EchoCancelOptions>,
+    /// Keep the stream running while inactive and drop its audio, so the mic
+    /// never suspends: onboard inputs thump and miss ~1.5 s on wake-up.
+    pub keep_open: bool,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -32,10 +37,13 @@ enum Control {
     Quit,
 }
 
-/// A microphone stream on its own PipeWire thread. Starts inactive so the mic
-/// is only open while something is listening.
+/// A microphone stream on its own PipeWire thread. Starts inactive: the mic
+/// is only open while something is listening, unless `keep_open`.
 pub struct Capture {
     ctl: pw::channel::Sender<Control>,
+    /// With `keep_open`, inactive means this is false and frames are dropped.
+    listening: Arc<AtomicBool>,
+    keep_open: bool,
     thread: Option<JoinHandle<()>>,
     echo_cancelled: bool,
 }
@@ -49,6 +57,14 @@ impl Capture {
     ) -> Result<Self, Error> {
         let (ctl_tx, ctl_rx) = pw::channel::channel::<Control>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<bool, Error>>();
+        let keep_open = opts.keep_open;
+        let listening = Arc::new(AtomicBool::new(false));
+        let gate = listening.clone();
+        let on_frames = move |samples| {
+            if gate.load(Ordering::Relaxed) {
+                on_frames(samples);
+            }
+        };
 
         let thread = std::thread::Builder::new()
             .name("vivus-capture".into())
@@ -62,6 +78,8 @@ impl Capture {
         let echo_cancelled = ready_rx.recv().map_err(|_| Error::ThreadDied)??;
         Ok(Self {
             ctl: ctl_tx,
+            listening,
+            keep_open,
             thread: Some(thread),
             echo_cancelled,
         })
@@ -73,7 +91,10 @@ impl Capture {
     }
 
     pub fn set_active(&self, active: bool) {
-        let _ = self.ctl.send(Control::SetActive(active));
+        self.listening.store(active, Ordering::Relaxed);
+        if !self.keep_open {
+            let _ = self.ctl.send(Control::SetActive(active));
+        }
     }
 }
 
@@ -116,6 +137,10 @@ fn run(
     }
 
     let stream = pw::stream::StreamRc::new(core, "vivus-capture", props)?;
+    let mut flags = pw::stream::StreamFlags::AUTOCONNECT | pw::stream::StreamFlags::MAP_BUFFERS;
+    if !opts.keep_open {
+        flags |= pw::stream::StreamFlags::INACTIVE;
+    }
 
     let _listener = stream
         .add_local_listener::<()>()
@@ -149,9 +174,7 @@ fn run(
     stream.connect(
         spa::utils::Direction::Input,
         None,
-        pw::stream::StreamFlags::AUTOCONNECT
-            | pw::stream::StreamFlags::MAP_BUFFERS
-            | pw::stream::StreamFlags::INACTIVE,
+        flags,
         &mut params,
     )?;
 
@@ -177,7 +200,7 @@ fn run(
 
 /// Loads `libpipewire-module-echo-cancel` in monitor mode: the reference is
 /// the sink's monitor, so nothing has to be routed through a special sink.
-/// Its nodes stay suspended, and the mic closed, while our stream is inactive.
+/// Its nodes, and the mic, suspend while our stream is inactive.
 fn load_echo_cancel(
     context: &pw::context::ContextRc,
     mic: Option<&str>,

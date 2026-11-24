@@ -69,6 +69,10 @@ end_of_turn_silence = 0.4
 # while music plays. Turn off if `input` is already echo-cancelled; the mic is
 # then paused while speaking.
 echo_cancel = true
+# Keep the mic running between listens (audio is dropped until you talk).
+# Onboard inputs often thump and miss the first second or so when they wake
+# from suspend. The desktop's mic-in-use indicator, if any, stays on.
+keep_mic_open = true
 # Other apps' volume (music, videos) while vivus speaks or you talk to it,
 # relative to their own; 1.0 leaves them alone. Your mixer's volumes for them
 # are left untouched.

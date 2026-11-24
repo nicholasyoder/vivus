@@ -100,6 +100,7 @@ impl Voice {
                 echo_cancel: config.audio.echo_cancel.then(|| EchoCancelOptions {
                     reference: config.audio.output.clone(),
                 }),
+                keep_open: config.audio.keep_mic_open,
             },
             move |samples| {
                 let _ = audio_tx.send(Msg::Audio(samples));

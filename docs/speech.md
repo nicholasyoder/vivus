@@ -351,61 +351,15 @@ Word error rate, music at about the voice's level (−24 dBFS RMS at the mic):
   loudest music matters a lot (46% vs 60% for the same setup, music shifted).
   With music playing the raw mic transcribes better than any canceller output,
   but STT stays on the cancelled signal: without it, podcasts, videos and
-  sung lyrics are transcribed as the user. The canceller restarts unconverged whenever
-  capture starts (its nodes suspend while we're not listening), so the first
-  seconds of push-to-talk over music are worst.
+  sung lyrics are transcribed as the user.
 - **Mic gain.** The real recordings peaked at 0 dBFS with up to 4% of samples
   clipped (ALC897 capture at +30 dB). Clipping makes the echo path nonlinear,
   which a linear canceller can't follow; aim for peaks around −6 dBFS.
 - **Wake-up thump.** The dev machine's onboard input (ALC897) opens with a DC
   thump: full scale for ~1.5 s, settled after ~4 s. PipeWire suspends idle
   nodes after 5 s and we only capture while listening, so speech right after
-  listening starts (push-to-talk especially) is clipped. Workaround: a
-  WirePlumber rule with `session.suspend-timeout-seconds = 0` for that source
-  (see [Keeping the mic warm](#keeping-the-mic-warm)).
-
-### Keeping the mic warm
-
-Roadmap item: no clipped or unconverged start when listening begins, without
-user setup. Two separate problems:
-
-1. **Wake-up thump** (hardware, onboard inputs like the ALC897): fixed on the
-   dev machine (2026-11-24) by
-   `~/.config/wireplumber/wireplumber.conf.d/51-mic-no-suspend.conf`; the node
-   now sits `idle` instead of `suspended`, and recording right after 7 s unused
-   showed no thump (peak 0.13 vs full scale before). Remove that file
-   (`systemctl --user restart wireplumber`) to reproduce the problem.
-
-   ```
-   monitor.alsa.rules = [
-     {
-       matches = [ { node.name = "alsa_input.pci-0000_0a_00.4.analog-stereo" } ]
-       actions = { update-props = { session.suspend-timeout-seconds = 0 } }
-     }
-   ]
-   ```
-2. **Canceller convergence.** The module is loaded once (capture spawn) but
-   its nodes suspend while our capture stream is inactive (`set_active` in
-   `crates/audio/src/capture.rs`). Unverified: whether suspend/resume resets
-   AEC3's state, and how long reconvergence costs on the real room. Measure
-   first: replay a `record-room.sh` take through `scripts/aec-bench/run.sh`
-   while toggling the capture between phrases (or compare WER of the first
-   phrase after a fresh start vs later ones). In the simulated bench, the
-   first clips after 2.5 s of music were the worst.
-
-Options (privacy is the tradeoff):
-
-- **Always-on capture**, audio discarded while not listening: fixes both on
-  any machine, but the desktop's mic-in-use indicator stays on permanently.
-- **Keep the input device from suspending** from vivus (what the rule does,
-  but automatic; e.g. set the property on the device node, or ship the rule)
-  and keep the canceller's nodes alive: no permanent indicator; fixes the
-  thump; convergence depends on (2).
-- **Warm up on demand** (start capture the moment listening is likely, drop
-  the thump): cheapest, partial, since people talk as soon as they press.
-
-Leaning: measure (2); if relearning costs no more than a word, the second
-option is enough.
+  listening starts (push-to-talk especially) was clipped. Fixed by
+  [keeping the mic warm](#keeping-the-mic-warm).
 - **Real-room scenes.** `scripts/aec-bench/record-room.sh` records the sink's
   monitor and the raw mic in one stream (run.sh's scene format) while you read
   `prompts.txt` over music, so settings can be compared on the real room
@@ -422,6 +376,34 @@ option is enough.
 
   The real room is far kinder than the simulated one: the new settings cost
   at most a few words in 151 against no canceller. Still unmeasured on real audio: talking over our own TTS.
+
+### Keeping the mic warm
+
+`[audio] keep_mic_open = true` (default) keeps the capture stream running
+while the daemon runs and drops its audio until listening starts
+(`Capture::set_active` only gates frames). The mic and the canceller never
+suspend, at the cost of the desktop's mic-in-use indicator staying on.
+
+Why: onboard inputs (the dev machine's ALSA HDA input) thump when PipeWire
+resumes them from suspend, which WirePlumber does after 5 s idle.
+`cargo run -p vivus-audio --example warm -- [--keep-open] 7 2` reopens the mic
+after 7 s and prints the peak of each 100 ms (2026-11-24, no WirePlumber rule):
+
+| | First 100 ms | Next ~1.4 s | First audio after start |
+|---|---|---|---|
+| Stream inactive between listens | 0.75–0.80 | ~0.055 | ~200 ms |
+| `keep_mic_open` | 0.010 | 0.010 | 2 ms |
+
+Alternatives rejected: a WirePlumber rule (`session.suspend-timeout-seconds =
+0` on the input node; works, but needs per-machine setup); WirePlumber
+0.5.19's `session.fast-capture-start` client property (only applies to nodes
+a rule marks `node.slow-resume`); short keep-alive pulses inside the 5 s
+timeout (depends on WirePlumber's default; indicators would flicker).
+
+The canceller doesn't need it: with music in the room (−43 dB at the mic) the
+echo left right after a restart from idle matched the steady state (about
+−56 dB per 100 ms; `--rms` mode of the same example); only a fresh module
+start took ~3 s to converge.
 
 Local speech means always-on listening costs no network round trips.
 
