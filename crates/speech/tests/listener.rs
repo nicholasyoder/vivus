@@ -1,6 +1,8 @@
 //! Needs models from scripts/fetch-models.sh; skips (passes) without them.
 
-use vivus_speech::{Event, Listener, Mode, SAMPLE_RATE, VadOptions, default_models_dir, stt};
+use vivus_speech::{
+    Event, Listener, Mode, Recorder, SAMPLE_RATE, VadOptions, default_models_dir, stt,
+};
 
 const WAV: &str = "sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8/test_wavs/0.wav";
 const MODELS: [&str; 3] = ["parakeet-tdt-110m", "parakeet-tdt-0.6b", "nemotron-streaming-0.6b"];
@@ -8,11 +10,22 @@ const MODELS: [&str; 3] = ["parakeet-tdt-110m", "parakeet-tdt-0.6b", "nemotron-s
 /// The clip trimmed to its speech (cut to `secs` if given), then `pad` seconds
 /// of silence either side.
 fn run(model: &str, mode: Mode, pad: f32, secs: Option<f32>) -> Option<Vec<Event>> {
+    run_with(model, mode, pad, secs, None)
+}
+
+fn run_with(
+    model: &str,
+    mode: Mode,
+    pad: f32,
+    secs: Option<f32>,
+    recorder: Option<Recorder>,
+) -> Option<Vec<Event>> {
     let dir = default_models_dir()?;
     let wave = sherpa_onnx::Wave::read(dir.join(WAV).to_str()?)?;
     let rec = stt::create(&dir, model, &Default::default()).ok()?;
     let mut listener = Listener::new(&dir, rec, &VadOptions::default()).ok()?;
     listener.set_mode(mode);
+    listener.set_recorder(recorder);
 
     let mut events = Vec::new();
     let silence = vec![0.0; (pad * SAMPLE_RATE as f32) as usize];
@@ -87,4 +100,29 @@ fn short_word_is_speech() {
         let text = words(&finals(&events).join(" "));
         assert_eq!(text, "well", "{model}: {events:?}");
     }
+}
+
+#[test]
+fn records_what_it_heard() {
+    let out = std::env::temp_dir().join(format!("vivus-rec-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    let model = "parakeet-tdt-110m";
+    let recorder = Recorder::new(&out, model).unwrap();
+    if run_with(model, Mode::Hold, 0.0, None, Some(recorder)).is_none() {
+        return;
+    }
+    let index = std::fs::read_to_string(out.join("transcripts.tsv")).unwrap();
+    let [line] = index.lines().collect::<Vec<_>>()[..] else {
+        panic!("{index}");
+    };
+    let [file, m, text] = line.split('\t').collect::<Vec<_>>()[..] else {
+        panic!("{line}");
+    };
+    assert_eq!(m, model);
+    assert!(words(text).ends_with("old portrait"), "{text}");
+    let wave = sherpa_onnx::Wave::read(out.join(file).to_str().unwrap()).unwrap();
+    assert_eq!(wave.sample_rate(), SAMPLE_RATE);
+    let secs = wave.samples().len() as f32 / SAMPLE_RATE as f32;
+    assert!((3.0..10.0).contains(&secs), "{secs} s");
+    std::fs::remove_dir_all(&out).unwrap();
 }

@@ -316,6 +316,24 @@ echo cancellation so the assistant doesn't hear itself (done 2026-11-24).
 
 Local speech means always-on listening costs no network round trips.
 
+## Recording utterances
+
+`[audio] record_utterances = true` makes the listener save exactly what it fed
+the recognizer for each utterance (after echo cancellation, preroll included;
+also one-word bursts it kept) to `~/.local/share/vivus/recordings/<UTC
+time>.wav`, 16 kHz mono, and append `file, model, transcript` to
+`transcripts.tsv` there. Use it to hear what the mic chain delivers and to
+re-run other models on real speech:
+
+```sh
+cd ~/.local/share/vivus/recordings
+cargo run --release -p vivus-speech --example listen_file -- --hold --pad 0 <model> *.wav
+```
+
+In real use (2026-11-24) the transcripts were noticeably worse than on clean
+clips, and better with `echo_cancel = false`; the canceller's WebRTC noise
+suppression is a suspect.
+
 ## Testing without a microphone
 
 Create a virtual source, point capture at it, and play a WAV into it:

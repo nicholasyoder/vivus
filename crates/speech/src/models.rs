@@ -77,11 +77,20 @@ pub fn default_models_dir() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("VIVUS_MODELS").filter(|v| !v.is_empty()) {
         return Some(dir.into());
     }
+    Some(data_dir()?.join("models"))
+}
+
+/// `$XDG_DATA_HOME/vivus/recordings`, else `~/.local/share/vivus/recordings`.
+pub fn default_recordings_dir() -> Option<PathBuf> {
+    Some(data_dir()?.join("recordings"))
+}
+
+fn data_dir() -> Option<PathBuf> {
     let data = std::env::var_os("XDG_DATA_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
-    Some(data.join("vivus/models"))
+    Some(data.join("vivus"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

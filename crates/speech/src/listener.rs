@@ -7,6 +7,7 @@ use std::path::Path;
 use sherpa_onnx::{SileroVadModelConfig, VadModelConfig, VoiceActivityDetector};
 
 use crate::models::VAD_MODEL;
+use crate::recorder::Recorder;
 use crate::stt::SpeechRecognizer;
 use crate::{Error, SAMPLE_RATE};
 
@@ -73,6 +74,9 @@ pub struct Listener {
     preroll_len: usize,
     window: Vec<f32>,
     in_utterance: bool,
+    recorder: Option<Recorder>,
+    /// What the recognizer got this utterance, kept only while recording.
+    heard: Vec<f32>,
 }
 
 impl Listener {
@@ -113,7 +117,14 @@ impl Listener {
             preroll_len: ((opts.min_speech + 0.25) * SAMPLE_RATE as f32) as usize,
             window: Vec::with_capacity(VAD_WINDOW),
             in_utterance: false,
+            recorder: None,
+            heard: Vec::new(),
         })
+    }
+
+    /// Save every utterance with its transcript (`None` stops).
+    pub fn set_recorder(&mut self, recorder: Option<Recorder>) {
+        self.recorder = recorder;
     }
 
     /// Switching mode drops any utterance in progress.
@@ -199,6 +210,9 @@ impl Listener {
         if is_word(&text) {
             // The burst is consumed; don't feed it again as the next preroll.
             self.preroll.clear();
+            if let Some(r) = &self.recorder {
+                r.save(&burst, &text);
+            }
             out(Event::SpeechStarted);
             out(Event::Final(text));
         } else {
@@ -207,6 +221,9 @@ impl Listener {
     }
 
     fn feed(&mut self, samples: &[f32], out: &mut impl FnMut(Event)) {
+        if self.recorder.is_some() {
+            self.heard.extend_from_slice(samples);
+        }
         if let Some(partial) = self.stt.accept(samples) {
             out(Event::Partial(partial));
         }
@@ -219,8 +236,13 @@ impl Listener {
             self.feed(&rest, out);
         }
         if self.in_utterance {
-            out(Event::Final(self.stt.finish()));
+            let text = self.stt.finish();
+            if let Some(r) = &self.recorder {
+                r.save(&self.heard, &text);
+            }
+            out(Event::Final(text));
         }
+        self.heard.clear();
         self.in_utterance = false;
         self.vad.reset();
         self.quick_vad.reset();
@@ -237,6 +259,7 @@ impl Listener {
         self.burst.clear();
         self.preroll.clear();
         self.window.clear();
+        self.heard.clear();
         self.in_utterance = false;
     }
 }

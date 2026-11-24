@@ -8,7 +8,7 @@ use anyhow::{Context, bail};
 use tokio::sync::mpsc::UnboundedSender;
 use vivus_audio::{Capture, CaptureOptions, EchoCancelOptions};
 use vivus_core::config::{Config, Provider, Role};
-use vivus_speech::{Listener, Mode, VadOptions, stt};
+use vivus_speech::{Listener, Mode, Recorder, VadOptions, stt};
 
 use crate::engine::Command;
 
@@ -56,6 +56,13 @@ impl Voice {
             ..Default::default()
         };
         let mut listener = Listener::new(&models_dir, rec, &vad)?;
+        if config.audio.record_utterances {
+            let dir = vivus_speech::default_recordings_dir().context("no home directory")?;
+            let recorder = Recorder::new(&dir, &model)
+                .with_context(|| format!("creating {}", dir.display()))?;
+            tracing::info!("recording utterances to {}", dir.display());
+            listener.set_recorder(Some(recorder));
+        }
 
         let (tx, rx) = mpsc::channel::<Msg>();
         std::thread::Builder::new()

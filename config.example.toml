@@ -71,3 +71,6 @@ echo_cancel = true
 # Other apps' volume (music, videos) while vivus speaks, relative to their own;
 # 1.0 leaves them alone. Your mixer's volumes for them are left untouched.
 duck_volume = 0.3
+# Save each utterance as the recognizer heard it (after echo cancellation) to
+# ~/.local/share/vivus/recordings, with transcripts.tsv. For debugging accuracy.
+record_utterances = false
