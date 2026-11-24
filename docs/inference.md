@@ -29,7 +29,8 @@ most models). Defaults and tests should work with either.
 A small `reqwest` + SSE client of our own rather than `async-openai`: generated
 SDK types reject the quirks below, and we need raw tool-argument deltas.
 
-- `Client::from_provider` reads the key from `api_key_env`; `chat()` returns a
+- `Client::from_provider` reads the key named by `api_key_env` from the
+  environment, else `~/.config/vivus/.env` (read per lookup, so edits apply live); `chat()` returns a
   `ChatStream` of `Event`s (`Text`, `Reasoning`, `ToolCallStart`,
   `ToolCallArgs`, then `Done(Reply)` with the assembled turn and usage).
   `complete()` drains it.

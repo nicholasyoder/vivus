@@ -105,7 +105,7 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 - Wake word as well as push-to-talk? Probably later and optional.
 - Should the router have a small local fallback for offline use? (Speech is already local.)
-- Where to store API keys: environment variables, Secret Service, or the config file? (Blocks editing providers in the sidebar.)
+- Where to store API keys long-term: Secret Service, or keep env + `~/.config/vivus/.env` (current interim)? (Blocks editing providers in the sidebar.)
 - How much conversation and sidebar history to keep, and where (documents are in memory only today).
 - Which actions need spoken or visual confirmation, and how to keep screen or web text from triggering actions (treat it as data; confirm what it suggests).
 

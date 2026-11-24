@@ -11,7 +11,7 @@ use crate::sse::SseParser;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("API key variable ${0} is not set")]
+    #[error("API key ${0} is not set (environment or ~/.config/vivus/.env)")]
     MissingKey(String),
     #[error("provider is not an openai-compatible provider")]
     WrongKind,
@@ -45,7 +45,8 @@ impl Client {
         }
     }
 
-    /// Builds a client for an `openai-compatible` provider, reading its key from the environment.
+    /// Builds a client for an `openai-compatible` provider; the key comes from
+    /// the environment or `~/.config/vivus/.env`.
     pub fn from_provider(provider: &Provider) -> Result<Self, Error> {
         let Provider::OpenaiCompatible {
             base_url,
@@ -56,10 +57,7 @@ impl Client {
         };
         let api_key = match api_key_env {
             Some(var) => Some(
-                std::env::var(var)
-                    .ok()
-                    .filter(|k| !k.is_empty())
-                    .ok_or_else(|| Error::MissingKey(var.clone()))?,
+                vivus_core::config::secret(var).ok_or_else(|| Error::MissingKey(var.clone()))?,
             ),
             None => None,
         };

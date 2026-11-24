@@ -2,3 +2,4 @@
 /sidebar/build/
 *.user
 /.vscode/
+/.env
