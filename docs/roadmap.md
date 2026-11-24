@@ -30,7 +30,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] TTS text normalization: numbers, times, dates, units, currency, acronyms, abbreviations, URLs (all dropped today); log remaining OOV words (2026-11-24, `0d464b7`) — [speech.md](speech.md#out-of-lexicon-words)
 - [x] Own phonemizer: lexicon lookup in Rust, `phoneme_codepoints` to sherpa; ARPAbet pronunciation file (learned + user entries) converted per model; `-s`/`-ed`/`-ing` suffix rules (Kokoro lacks many inflections) (2026-11-24, `342b76f`) — [speech.md](speech.md#out-of-lexicon-words)
 - [x] LLM pronunciation lookup for OOV words, started while the reply streams; cached in the learned lexicon; idle prefetch of app names and transcripts (2026-11-24, `aeae4c1`) — [speech.md](speech.md#out-of-lexicon-words)
-- [x] Echo cancellation (auto-loaded PipeWire `module-echo-cancel`, monitor mode so music is cancelled too) and barge-in: possible speech pauses TTS, confirmed speech cancels TTS and LLM (2026-11-24, `HASH`) — [speech.md](speech.md#barge-in)
+- [x] Echo cancellation (auto-loaded PipeWire `module-echo-cancel`, monitor mode so music is cancelled too) and barge-in: possible speech pauses TTS, confirmed speech cancels TTS and LLM (2026-11-24, `4ac2343`) — [speech.md](speech.md#barge-in)
 - [ ] Try echo cancellation and barge-in in a real room, with music; tune `min_speech_possible` — [speech.md](speech.md#barge-in)
 - [ ] Capture downmixes all channels (a stereo mic currently links only `FL`)
 
