@@ -17,6 +17,18 @@ role names a provider plus a model; switching providers is a config edit only.
 Provider kinds today: `openai-compatible` (`base_url`, `api_key_env`),
 `claude-code` (`command`), `local-speech` (`models_dir`, `threads`).
 
+## Providers and client
+
+Keys on hand for development: Groq (free tier, good for small fast models, but
+already used elsewhere, so don't make it the only option) and
+[nano-gpt](https://docs.nano-gpt.com/introduction) (OpenAI-compatible, hosts
+most models). Defaults and tests should work with either.
+
+Still to decide in the `vivus-inference` session: an existing client crate
+(e.g. `async-openai`) or a small `reqwest` + SSE client of our own. What
+matters: streaming tool-call arguments (parse `speak`'s partial `text` as it
+arrives), cancelling a stream mid-reply, and tolerance for providers' quirks.
+
 ## Routing
 
 One model call with tools, not a separate classifier. The router gets the

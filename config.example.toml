@@ -7,6 +7,12 @@ kind = "openai-compatible"
 base_url = "https://api.groq.com/openai/v1"
 api_key_env = "GROQ_API_KEY"
 
+# OpenAI-compatible aggregator with most models (https://docs.nano-gpt.com).
+[providers.nano-gpt]
+kind = "openai-compatible"
+base_url = "https://nano-gpt.com/api/v1"
+api_key_env = "NANOGPT_API_KEY"
+
 # Local speech models (scripts/fetch-models.sh downloads them).
 [providers.local-speech]
 kind = "local-speech"
