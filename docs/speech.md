@@ -114,7 +114,8 @@ shrink, and lets the router start speculatively before you've definitely finishe
   PipeWire's `drained`, `stop` drops everything at once; `pause`/`resume`
   hold the queue (barge-in). `[audio] output` targets a node.
 - **Ducking** (`crates/audio/src/duck.rs`): while playback is active, every
-  other app's output stream is turned down to `[audio] duck_volume` (default
+  other app's output stream (not our `vivus-*` nodes; registry globals carry no
+  process id to tell them apart) is turned down to `[audio] duck_volume` (default
   0.3, about -10 dB; 1 turns it off). It scales the streams' `softVolumes`,
   not `channelVolumes`, which mixers show and WirePlumber saves per app, so a
   user's volumes are never overwritten; changing an app's volume while ducked

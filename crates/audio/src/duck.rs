@@ -35,13 +35,12 @@ pub(crate) struct Ducker {
 }
 
 impl Ducker {
-    /// Tracks every audio output stream except this process's own. `level`
+    /// Tracks every audio output stream except our own (`vivus-*` nodes). `level`
     /// is their volume while ducked, relative to what the user set.
     pub fn new(core: &pw::core::CoreRc, level: f32) -> Result<Self, pw::Error> {
         let registry = core.get_registry_rc()?;
         let streams: Streams = Rc::default();
         let ducked = Rc::new(Cell::new(false));
-        let own_pid = std::process::id().to_string();
 
         let listener = registry
             .add_listener_local()
@@ -52,7 +51,8 @@ impl Ducker {
                     let Some(props) = global.props else { return };
                     if global.type_ != ObjectType::Node
                         || props.get("media.class") != Some("Stream/Output/Audio")
-                        || props.get("application.process.id") == Some(own_pid.as_str())
+                        // Our own nodes (registry props carry no process id).
+                        || props.get("node.name").is_some_and(|n| n.starts_with("vivus-"))
                     {
                         return;
                     }
