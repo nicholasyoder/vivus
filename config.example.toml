@@ -65,11 +65,13 @@ provider = "claude-code"
 # output = "alsa_output.pci-0000_00_1f.3.analog-stereo"
 end_of_turn_silence = 0.4
 # Cancels whatever `output` (or the default sink) plays, so you can interrupt
-# replies by talking, even with music on. Turn off if `input` is already
-# echo-cancelled; the mic is then paused while speaking.
+# replies by talking, even with music on. It costs some recognition accuracy
+# while music plays. Turn off if `input` is already echo-cancelled; the mic is
+# then paused while speaking.
 echo_cancel = true
-# Other apps' volume (music, videos) while vivus speaks, relative to their own;
-# 1.0 leaves them alone. Your mixer's volumes for them are left untouched.
+# Other apps' volume (music, videos) while vivus speaks or you talk to it,
+# relative to their own; 1.0 leaves them alone. Your mixer's volumes for them
+# are left untouched.
 duck_volume = 0.3
 # Save each utterance as the recognizer heard it (after echo cancellation) to
 # ~/.local/share/vivus/recordings, with transcripts.tsv. For debugging accuracy.

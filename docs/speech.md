@@ -133,7 +133,9 @@ shrink, and lets the router start speculatively before you've definitely finishe
 - **Ducking** (`crates/audio/src/duck.rs`): while we're actually speaking
   (playback has audio; 1 s of silence, e.g. waiting on an escalation after
   the filler, brings them back up until speech resumes), every
-  other app's output stream (not our `vivus-*` nodes; registry globals carry no
+  other app's output stream (also while the user talks: from `SpeechPossible`
+  or the push-to-talk key to the utterance's end, which helps echo
+  cancellation) (not our `vivus-*` nodes; registry globals carry no
   process id to tell them apart) is turned down to `[audio] duck_volume` (default
   0.3, about -10 dB; 1 turns it off). It scales the streams' `softVolumes`,
   not `channelVolumes`, which mixers show and WirePlumber saves per app, so a
@@ -313,6 +315,48 @@ echo cancellation so the assistant doesn't hear itself (done 2026-11-24).
   - A 200 ms speech fragment paused playback for 380 ms, then it resumed.
 - Tried in a real room with music playing (2026-11-24): cancellation,
   interrupting and ducking work; `min_speech_possible` kept at 64 ms.
+
+### Echo cancellation quality
+
+Real use (2026-11-24, [recorded](#recording-utterances)): without the canceller
+transcripts were near perfect; with it they were garbled, and with music on it
+barely worked. The recordings sounded garbled with words missing.
+
+Bench (`scripts/aec-bench/`): 13 of those clean recordings (103 words) mixed
+with synthetic stereo music (drums, bass, pad, TTS "vocals", instruments panned)
+through two different simulated speaker-to-mic paths, played through the real
+module (monitor mode, virtual nodes), output transcribed by `parakeet-tdt-0.6b`.
+Word error rate, music at about the voice's level (−24 dBFS RMS at the mic):
+
+| Setup | WER, 2.5 s music lead-in | WER, 10 s lead-in | Music 10 dB down (ducked) |
+|---|---|---|---|
+| No canceller (music vocals get transcribed) | 41% | 39% | 16% |
+| Mono reference, noise suppression on (was the default) | 95% | | 70% |
+| Mono reference, noise suppression off | 84% | | |
+| Stereo reference, noise suppression on | 56% | | |
+| Stereo reference, noise suppression off (now) | 46% | 60% | 21% |
+
+- **Stereo reference.** A mono downmix can't model two speakers' different
+  paths, so WebRTC AEC3's suppressor mutes nearly everything while music plays:
+  echo-only output was −87 dB with mono, −44 dB with stereo (input −24 dB),
+  and the voice goes with it. Mic and output stay mono.
+- **No noise suppression.** PipeWire enables WebRTC's at its "high" level by
+  default; it smears consonants, and Parakeet copes with room noise anyway.
+  The high-pass filter makes no difference (identical output).
+- **Ducking while the user talks.** Other apps duck on `SpeechPossible` (or the
+  push-to-talk key) until the utterance ends, not only while we speak.
+- **Remaining limits.** Even with no echo at all, music in the reference takes
+  the WER from 3% to 11%: the suppressor trims speech it can't rule out as
+  echo, and PipeWire exposes no suppressor tuning. Which words overlap the
+  loudest music matters a lot (46% vs 60% for the same setup, music shifted).
+  With music playing the raw mic transcribes better than any canceller output,
+  so STT on the raw mic while we're silent is worth trying (VAD and barge-in
+  still on the cancelled signal). The canceller restarts unconverged whenever
+  capture starts (its nodes suspend while we're not listening), so the first
+  seconds of push-to-talk over music are worst.
+- **Mic gain.** The real recordings peaked at 0 dBFS with up to 4% of samples
+  clipped (ALC897 capture at +30 dB). Clipping makes the echo path nonlinear,
+  which a linear canceller can't follow; aim for peaks around −6 dBFS.
 
 Local speech means always-on listening costs no network round trips.
 

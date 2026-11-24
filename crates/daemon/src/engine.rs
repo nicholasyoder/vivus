@@ -182,6 +182,8 @@ impl Engine {
             return Ok(());
         };
         voice.start(mode);
+        // Push-to-talk: talking starts with the key, not when the VAD notices.
+        self.user_talking(mode == Mode::Hold);
         self.listen_mode = Some(mode);
         self.mic_paused = false;
         self.set_state(AssistantState::Listening).await
@@ -189,6 +191,7 @@ impl Engine {
 
     async fn stop_listening(&mut self) -> zbus::Result<()> {
         self.cancel_reply();
+        self.user_talking(false);
         if let Some(v) = &self.voice {
             v.stop();
         }
@@ -198,6 +201,11 @@ impl Engine {
     }
 
     async fn on_speech(&mut self, event: Event) -> zbus::Result<()> {
+        match &event {
+            Event::SpeechPossible => self.user_talking(true),
+            Event::NotSpeech | Event::Final(_) => self.user_talking(false),
+            _ => {}
+        }
         match event {
             // Pause first, so a cough costs a hiccup rather than the reply.
             Event::SpeechPossible | Event::NotSpeech
@@ -359,6 +367,12 @@ impl Engine {
     }
 
     /// Drops the reply in progress: the LLM request closes and TTS goes quiet.
+    fn user_talking(&self, talking: bool) {
+        if let Some(s) = &self.speaker {
+            s.user_talking(talking);
+        }
+    }
+
     fn cancel_reply(&mut self) {
         if let Some(task) = self.reply.take().and_then(|r| r.task) {
             task.abort();

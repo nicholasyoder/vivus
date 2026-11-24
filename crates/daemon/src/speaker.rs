@@ -156,6 +156,11 @@ impl Speaker {
         self.playback.resume();
     }
 
+    /// Duck other apps while the user talks (helps echo cancellation).
+    pub fn user_talking(&self, talking: bool) {
+        self.playback.user_talking(talking);
+    }
+
     /// Looks up unknown words in `text` in the background (e.g. what the user said).
     pub fn prefetch(&self, text: &str) {
         self.lookup(text, false);

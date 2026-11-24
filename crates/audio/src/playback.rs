@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::mpsc;
@@ -27,6 +27,7 @@ enum Control {
     End,
     Stop,
     Pause(bool),
+    UserTalking(bool),
     Quit,
 }
 
@@ -57,6 +58,12 @@ impl PlaybackSender {
 
     pub fn resume(&self) {
         let _ = self.0.send(Control::Pause(false));
+    }
+
+    /// Duck other audio while the user talks, whether or not we're playing:
+    /// less music in the mic means less for echo cancellation to remove.
+    pub fn user_talking(&self, talking: bool) {
+        let _ = self.0.send(Control::UserTalking(talking));
     }
 }
 
@@ -151,9 +158,22 @@ fn run(
         },
         None => None,
     };
-    let duck = move |on: bool| {
-        if let Some(d) = &ducker {
-            d.set(on);
+    // Ducked while we play or while the user talks.
+    let (playing, talking) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
+    let apply = {
+        let (playing, talking) = (playing.clone(), talking.clone());
+        move || {
+            if let Some(d) = &ducker {
+                d.set(playing.get() || talking.get());
+            }
+        }
+    };
+    let apply = Rc::new(apply);
+    let duck = {
+        let apply = apply.clone();
+        move |on: bool| {
+            playing.set(on);
+            apply();
         }
     };
     let duck = Rc::new(duck);
@@ -304,6 +324,10 @@ fn run(
             }
             Control::End => st.ending = true,
             Control::Pause(paused) => st.paused = paused,
+            Control::UserTalking(on) => {
+                talking.set(on);
+                apply();
+            }
             Control::Stop => {
                 st.queue.clear();
                 st.ending = false;
@@ -315,6 +339,7 @@ fn run(
                 set_active(&mut st, false);
             }
             Control::Quit => {
+                talking.set(false);
                 duck(false);
                 quit_seq.set(core.sync(0).ok());
                 if let Some(l) = weak_loop.upgrade() {

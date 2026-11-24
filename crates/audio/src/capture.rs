@@ -187,12 +187,17 @@ fn load_echo_cancel(
         t.map(|t| format!("target.object = {}", quote(t)))
             .unwrap_or_default()
     };
+    // Stereo reference: a mono downmix can't model two speakers' different
+    // paths, so the suppressor mutes everything (voice too) while music plays.
+    // Noise suppression (on, at "high", by default) garbles speech for STT.
     let args = format!(
         "{{ monitor.mode = true audio.channels = 1 audio.position = [ MONO ] \
          node.description = \"Vivus echo cancellation\" \
+         aec.args = {{ webrtc.noise_suppression = false }} \
          capture.props = {{ node.name = \"vivus-echo-cancel-capture\" {} }} \
          source.props = {{ node.name = \"{ECHO_CANCEL_SOURCE}\" priority.session = 0 }} \
-         sink.props = {{ node.name = \"vivus-echo-cancel-reference\" {} }} }}",
+         sink.props = {{ node.name = \"vivus-echo-cancel-reference\" \
+           audio.position = [ FL FR ] {} }} }}",
         target(mic),
         target(opts.reference.as_deref()),
     );

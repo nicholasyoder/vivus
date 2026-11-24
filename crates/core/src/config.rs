@@ -54,7 +54,7 @@ pub struct Audio {
     /// Load PipeWire's echo canceller so the mic stays open while speaking
     /// (barge-in). It removes everything the output sink plays, music included.
     pub echo_cancel: bool,
-    /// Other apps' volume while speaking, relative to their own (0.3 is about
+    /// Other apps' volume while we speak or the user talks, relative to their own (0.3 is about
     /// -10 dB); 1 leaves them alone.
     pub duck_volume: f32,
     /// Save each utterance as heard (after echo cancellation) with its
