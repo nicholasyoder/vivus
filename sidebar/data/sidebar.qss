@@ -1,0 +1,41 @@
+/* Default vivus-sidebar style. Copy to ~/.config/vivus/sidebar.qss to customize.
+   Selectors: #VivusSidebar, #StateDot, #StateLabel, #History, #Document, #Input, #TalkButton.
+   #VivusSidebar and #StateDot carry a `state` property:
+   idle | listening | thinking | speaking | disconnected. */
+
+#VivusSidebar {
+    background: palette(window);
+}
+
+#StateDot {
+    border-radius: 5px;
+    background: palette(mid);
+}
+#StateDot[state="disconnected"] { background: #808080; }
+#StateDot[state="listening"]    { background: #e05050; }
+#StateDot[state="thinking"]     { background: #e0b030; }
+#StateDot[state="speaking"]     { background: #40b060; }
+
+#StateLabel {
+    color: palette(placeholder-text);
+}
+
+#Document {
+    background: palette(base);
+    border-radius: 8px;
+    padding: 8px;
+}
+
+#Input {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid palette(mid);
+    background: palette(base);
+}
+#Input:focus {
+    border-color: palette(highlight);
+}
+
+#TalkButton {
+    padding: 6px 14px;
+}

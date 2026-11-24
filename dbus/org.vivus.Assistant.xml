@@ -1,0 +1,55 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<!--
+  Service: org.vivus (session bus), object: /org/vivus
+  Shared by vivus-daemon (server), vivusctl, vivus-sidebar and the Forest bridge.
+  Keep crates/dbus/src/lib.rs in sync with this file.
+-->
+<node>
+  <interface name="org.vivus.Assistant">
+    <!-- idle | listening | thinking | speaking. Changes via org.freedesktop.DBus.Properties.PropertiesChanged. -->
+    <property name="State" type="s" access="read"/>
+
+    <method name="ToggleListen"/>
+    <!-- Push-to-talk. -->
+    <method name="StartListening"/>
+    <method name="StopListening"/>
+    <!-- Text input, bypassing STT. -->
+    <method name="Ask">
+      <arg name="text" type="s" direction="in"/>
+    </method>
+    <!-- Interrupt: cancels in-flight TTS, LLM streams and tool calls. -->
+    <method name="Cancel"/>
+
+    <!-- role: user | assistant -->
+    <signal name="Transcript">
+      <arg name="role" type="s"/>
+      <arg name="text" type="s"/>
+    </signal>
+
+    <!-- Asks UIs to show, hide or toggle the sidebar. -->
+    <method name="ToggleSidebar"/>
+    <signal name="SidebarVisibilityRequested">
+      <!-- show | hide | toggle -->
+      <arg name="action" type="s"/>
+    </signal>
+  </interface>
+
+  <interface name="org.vivus.Documents">
+    <!-- Ids, oldest first. -->
+    <method name="List">
+      <arg name="ids" type="as" direction="out"/>
+    </method>
+    <method name="Get">
+      <arg name="id" type="s" direction="in"/>
+      <arg name="title" type="s" direction="out"/>
+      <arg name="markdown" type="s" direction="out"/>
+    </method>
+    <!-- Emitted on create and on every append/replace. -->
+    <signal name="DocumentChanged">
+      <arg name="id" type="s"/>
+      <arg name="title" type="s"/>
+      <arg name="markdown" type="s"/>
+    </signal>
+  </interface>
+</node>

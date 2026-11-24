@@ -1,0 +1,36 @@
+# Copy to ~/.config/vivus/config.toml.
+# Each role names a provider (and usually a model). Switch providers by editing
+# this file only.
+
+[providers.groq]
+kind = "openai-compatible"
+base_url = "https://api.groq.com/openai/v1"
+api_key_env = "GROQ_API_KEY"
+
+[providers.local]
+kind = "openai-compatible"
+base_url = "http://127.0.0.1:8080/v1"
+
+[providers.claude-code]
+kind = "claude-code"
+command = "claude"
+
+[roles.stt]
+provider = "groq"
+model = "whisper-large-v3-turbo"
+
+[roles.tts]
+provider = "local"
+model = "kokoro"
+voice = "af_heart"
+
+[roles.router]
+provider = "groq"
+model = "<fast-model>"
+
+[roles.answer]
+provider = "groq"
+model = "<mid-tier-model>"
+
+[roles.agent]
+provider = "claude-code"

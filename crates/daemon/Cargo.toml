@@ -1,0 +1,16 @@
+[package]
+name = "vivus-daemon"
+description = "The vivus assistant daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+vivus-core.workspace = true
+vivus-dbus.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+zbus.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

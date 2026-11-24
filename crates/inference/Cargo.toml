@@ -1,0 +1,9 @@
+[package]
+name = "vivus-inference"
+description = "Provider clients: OpenAI-compatible, Claude Code, STT/TTS APIs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
