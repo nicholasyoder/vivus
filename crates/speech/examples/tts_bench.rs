@@ -46,7 +46,12 @@ fn main() {
         let t = Instant::now();
         let samples = synth.synthesize(s);
         let e = t.elapsed();
-        println!("  {:>5.0} ms for {:.1}s: {s}", e.as_secs_f64() * 1e3, samples.len() as f32 / rate as f32);
+        let spoken = synth.normalize(s);
+        println!("  {:>5.0} ms for {:.1}s: {spoken}", e.as_secs_f64() * 1e3, samples.len() as f32 / rate as f32);
+        let missing = synth.missing_words(&spoken);
+        if !missing.is_empty() {
+            println!("           not in lexicon: {}", missing.join(", "));
+        }
         audio.extend(samples);
         compute += e;
         first.get_or_insert(compute);

@@ -2567,8 +2567,10 @@ dependencies = [
 name = "vivus-speech"
 version = "0.1.0"
 dependencies = [
+ "regex",
  "sherpa-onnx",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

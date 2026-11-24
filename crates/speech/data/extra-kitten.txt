@@ -1,0 +1,4 @@
+# Words missing from lexicon-en-us.txt (espeak IPA). Same format.
+or || ˈ ɔː ɹ
+her || hˈ ɜː
+gigahertz || ɡˈ ɪ ɡ ə hˌ ɜː t s

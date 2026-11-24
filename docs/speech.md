@@ -89,12 +89,16 @@ shrink, and lets the router start speculatively before you've definitely finishe
   `leo`). Unset `tts` means `kitten-nano`. The daemon synthesizes a short
   warm-up phrase at load because the first inference is several times slower.
 - **No espeak-ng**: sherpa-onnx 2.x dropped it (GPL), so models need a lexicon.
-  Kokoro's archive ships `lexicon-us-en.txt`/`lexicon-gb-en.txt` (British voices
-  get the latter). Kitten's doesn't; it uses the shared espeak-IPA
-  `lexicon-en-us.txt` from the `tts-models` release, stored in the models dir.
+  Kokoro's archive ships `lexicon-us-en.txt`/`lexicon-gb-en.txt`; we pass both,
+  the voice's own first (sherpa takes a comma-separated list, first entry wins),
+  because the US one lacks many plurals ("minutes", "degrees", "dogs"). Kitten's
+  archive has none; it uses the shared espeak-IPA `lexicon-en-us.txt` from the
+  `tts-models` release, stored in the models dir, after our small
+  `crates/speech/data/extra-kitten.txt` (it lacks "or" and "her"!), which is
+  copied beside it at load. Loading costs ~30 ms (Kitten) and ~500 ms (Kokoro).
   **Out-of-lexicon words are dropped silently** (sherpa logs "OOV word
   skipped"): "Open Hyprland and zorbleflax the Kubernetes pods." is spoken as
-  "Open and the pods." with both models. Needs a fallback, see
+  "Open and the pods." with both models. See
   [Out-of-lexicon words](#out-of-lexicon-words).
 - **Sentence splitting** (`SentenceSplitter`): streamed deltas in, complete
   sentences out. Splits on `.!?…` followed by whitespace, and on newlines; skips
@@ -116,12 +120,35 @@ Sherpa's lexicon frontend drops every word it can't find, and does no text
 normalization. Tested 2026-11-23 on "It is 3:45 PM on Nov 23, 2026. Your GPU
 uses 12.5 GB, about 40% of the RAM. Dr. Smith emailed you about the API at
 vivus.org.": both models drop every number, `40%` and `GB`; Kitten also drops
-`GPU` and `vivus`, Kokoro `API` and `emailed`. Plan, in layers:
+`GPU` and `vivus`, Kokoro `API` and `emailed`. It also drops words with quotes
+or brackets attached (`"Hello`, `(world)`), `foo/bar`, and a possessive or
+contraction it lacks (`Smith's`; Kokoro lacks `that's`, `what's`, `here's`).
+Plan, in layers:
 
-1. **Normalization** (text → text, before sherpa): numbers, decimals, times,
-   dates, ordinals, percentages, currency, units, abbreviations (`Dr.`, `Nov`),
-   all-caps acronyms spelled as letters, URLs and paths. Log what's still OOV.
-   Until it lands, the router prompt asks for numbers and units as words.
+1. **Normalization** (done 2026-11-24, `crates/speech/src/normalize.rs`): text
+   → text before sherpa, inside `Synthesizer::synthesize`, so the router can
+   write digits and symbols. Regex passes, in order: emails and URLs (host only,
+   `vivus dot org`), file names; symbol cleanup (quotes, brackets, markdown,
+   emoji, `&` `+` `=`); currency (`$5.99`, `€1.4K`, `£3.50`); dates (ISO,
+   `11/24/2026` US order, `Nov 23, 2026`, `23rd March`, weekday abbreviations);
+   times (`3:45 PM`, `7am`, `15:30`); decades and years after `in`/`since`/…;
+   signs, ranges, `%`, `°C`, units (`km/h` → "kilometers an hour"), ordinals,
+   simple fractions; version numbers; every other number (long or
+   zero-padded ones digit by digit); abbreviations (`Dr.`, `vs.`, `e.g.`,
+   `etc.`). Then two lexicon-aware passes: all-caps words of 2–6 letters are
+   spelled as letters unless the lexicon knows them (`US`, `IT`, `OS`, … are
+   always spelled), and unknown words are respelled: contractions expanded
+   (`that's` → "that is", `should've` → "should have"), possessives of known
+   words lose the `'s` (`NVIDIA's` → "NVIDIA"), camelCase and two-word
+   compounds split (`GitHub` → "Git Hub", `Firefox` → "Fire fox"), metric
+   prefixes split (`kilometers` → "kilo meters"). Whatever is still unknown is
+   logged at info (`tts: not in lexicon, skipped: …`); `tts_bench` prints it per
+   sentence. Our check matches sherpa's own OOV log on the test sentences.
+   On a ~25-sentence sweep of typical replies, what's left is names
+   (`Hyprland`, `Kubernetes`, `nginx`, `Spotify`, `LibreOffice`) and, for
+   Kokoro, inflected forms neither of its lexicons has (`opens`,
+   `notifications`, `compositors`): the phonemizer needs `-s`/`-ed`/`-ing`
+   suffix rules.
 2. **Own phonemizer.** `phoneme_codepoints` replaces the whole sentence's input,
    so per-word fixes mean phonemizing ourselves: load the lexicon in Rust, look
    up each word, emit codepoints (punctuation and pauses included). This also

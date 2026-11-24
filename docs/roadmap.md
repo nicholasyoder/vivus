@@ -27,8 +27,8 @@ everyday use work comes first, then smarter answers, then polish.
 
 ### 1b: Speaking well
 
-- [ ] TTS text normalization: numbers, times, dates, units, currency, acronyms, abbreviations, URLs (all dropped today); log remaining OOV words — [speech.md](speech.md#out-of-lexicon-words)
-- [ ] Own phonemizer: lexicon lookup in Rust, `phoneme_codepoints` to sherpa; ARPAbet pronunciation file (learned + user entries) converted per model — [speech.md](speech.md#out-of-lexicon-words)
+- [x] TTS text normalization: numbers, times, dates, units, currency, acronyms, abbreviations, URLs (all dropped today); log remaining OOV words (2026-11-24, `HASH`) — [speech.md](speech.md#out-of-lexicon-words)
+- [ ] Own phonemizer: lexicon lookup in Rust, `phoneme_codepoints` to sherpa; ARPAbet pronunciation file (learned + user entries) converted per model; `-s`/`-ed`/`-ing` suffix rules (Kokoro lacks many inflections) — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] LLM pronunciation lookup for OOV words, started while the reply streams; cached in the learned lexicon; idle prefetch of app names and window titles — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] Echo cancellation (set up or auto-load PipeWire `module-echo-cancel`) and barge-in: speech during playback cancels TTS and LLM within ~200 ms — [speech.md](speech.md#barge-in)
 - [ ] Capture downmixes all channels (a stereo mic currently links only `FL`)

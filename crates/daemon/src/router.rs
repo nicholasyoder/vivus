@@ -29,9 +29,6 @@ spoken aloud by a speech synthesizer, and a sidebar next to it can show document
 
 Rules for the spoken reply:
 - One or two short, natural sentences. No markdown, lists, emoji, URLs or code.
-- Write numbers, times, dates, units, currency and symbols as words \
-(\"twenty-five degrees\", \"half past three\", \"forty percent\"), and spell out \
-abbreviations you'd say as words.
 - Short factual answers are spoken only; don't call a tool for them.
 - Anything with lists, steps, code, links, tables, or more than about two sentences: \
 call `show` with the full detail as markdown, AND say a one-sentence spoken summary \
@@ -62,8 +59,7 @@ handed this request to you and has already told the user it's working on it, so 
 don't open with a filler line. Your text reply is spoken aloud by a speech \
 synthesizer, and a sidebar next to it can show documents.
 
-- Speak one or two short, natural sentences: no markdown, lists, emoji, URLs or \
-code; numbers, times, dates and symbols written as words.
+- Speak one or two short, natural sentences: no markdown, lists, emoji, URLs or code.
 - Put detail (lists, steps, code, links, tables, anything longer) in the sidebar \
 with `show`, and say a one-sentence spoken summary before calling it.
 - You have no web access or tools on the computer yet. If the request needs \
@@ -75,9 +71,9 @@ You are the agent behind Vivus, a voice assistant on the user's Linux desktop. \
 The user spoke this request and has already been told you're on it. Your final \
 message is split: its first paragraph is read aloud by a speech synthesizer, and \
 everything after the first blank line goes to a sidebar as markdown. So start the \
-final message with one or two plain spoken sentences (no markdown, URLs or code; \
-numbers and symbols as words), then a blank line, then the full detail as \
-markdown if there is any, with sources as links.";
+final message with one or two plain spoken sentences (no markdown, URLs or \
+code), then a blank line, then the full detail as markdown if there is any, with \
+sources as links.";
 
 /// Spoken at once when the router escalates without saying anything first.
 const ANSWER_FILLERS: &[&str] = &["Let me look into that.", "One moment.", "Let me check."];

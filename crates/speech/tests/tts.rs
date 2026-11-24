@@ -32,3 +32,18 @@ fn voices_resolve() {
     let Some(s) = synth("kitten-nano", Some("nope")) else { return };
     assert!(matches!(s, Err(Error::UnknownVoice(..))));
 }
+
+/// Typical reply text loses no words with either model (sherpa drops unknown ones).
+#[test]
+fn normalized_text_is_in_lexicon() {
+    let text = "It is 3:45 PM on Nov 23, 2026. Your GPU uses 12.5 GB, about 40% of the RAM. \
+        Tell her it's 21°C or 70°F, wind 15 km/h, and that's $5.99. What's next? \
+        Dr. Smith emailed you about the API at vivus.org.";
+    for model in vivus_speech::models::TTS_MODELS {
+        let Some(s) = synth(model.name, None) else { continue };
+        let s = s.unwrap();
+        let spoken = s.normalize(text);
+        let missing = s.missing_words(&spoken);
+        assert_eq!(missing, ["vivus"], "{}: {spoken}", model.name);
+    }
+}

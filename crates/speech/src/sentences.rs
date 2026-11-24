@@ -7,6 +7,7 @@ const SOFT_LIMIT: usize = 120;
 
 const ABBREVIATIONS: &[&str] = &[
     "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "vs", "e.g", "i.e", "approx", "no", "fig",
+    "mt", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
 ];
 
 #[derive(Debug, Default)]
@@ -126,8 +127,8 @@ mod tests {
     #[test]
     fn keeps_abbreviations_and_quotes() {
         assert_eq!(
-            split(&["Dr. Smith met e.g. the U.S. team. He said \"hi.\" Then left."]),
-            ["Dr. Smith met e.g. the U.S. team.", "He said \"hi.\"", "Then left."]
+            split(&["Dr. Smith met e.g. the U.S. team on Nov. 3. He said \"hi.\" Then left."]),
+            ["Dr. Smith met e.g. the U.S. team on Nov. 3.", "He said \"hi.\"", "Then left."]
         );
     }
 

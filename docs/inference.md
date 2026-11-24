@@ -96,7 +96,9 @@ Speech/sidebar rules (system prompt and examples):
 After action tools run, their results go back in a follow-up call, and that
 call's content is spoken too ("Opened Firefox"). If a model puts sidebar-style
 material (lists, code) in content anyway, the prompt and examples are the fix;
-TTS normalization drops what it can't say.
+TTS normalization drops what it can't say. Numbers, times, units and symbols
+can be written normally: [normalization](speech.md#out-of-lexicon-words) turns
+them into words, so the prompt no longer asks for them spelled out.
 
 In the example run (2026-11-23), both gpt-oss-20b and DeepSeek called `show`
 for a packing list **with no spoken content**, despite the prompt asking for a

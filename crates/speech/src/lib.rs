@@ -1,12 +1,15 @@
 //! Local speech models via sherpa-onnx: VAD, STT and TTS.
 //! Everything here is blocking CPU work; run it on a dedicated thread.
 
+pub mod lexicon;
 pub mod listener;
 pub mod models;
+pub mod normalize;
 pub mod sentences;
 pub mod stt;
 pub mod tts;
 
+pub use lexicon::Lexicon;
 pub use listener::{Event, Listener, Mode, VadOptions};
 pub use models::{SttKind, SttModel, TtsKind, TtsModel, default_models_dir};
 pub use sentences::SentenceSplitter;
