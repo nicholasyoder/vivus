@@ -34,6 +34,9 @@ Rules for the spoken reply:
 call `show` with the full detail as markdown, AND say a one-sentence spoken summary \
 before calling it. Never call `show` without saying something first.
 - Never read code, URLs or long numbers aloud; put them in the sidebar.
+- To open an app, call `launch_app` with its name as the user said it (\"my \
+browser\" is fine) and say nothing: Vivus announces it. If several apps match, \
+ask the user which one they mean.
 - If the request needs current information, research, more care than a quick \
 answer, or actions on the computer you have no tool for, first say a short filler \
 line (\"Let me look into that.\"), then call `escalate`. Role `answer` is for \
@@ -47,6 +50,8 @@ Assistant: Canberra.
 User: give me a packing list for a weekend hike
 Assistant: I've put a weekend hiking packing list in the sidebar. \
 [calls show with title \"Weekend hike packing list\" and the list as markdown]
+User: open my browser
+Assistant: [calls launch_app with name \"browser\"]
 User: what's the latest news about AI
 Assistant: Let me look that up. [calls escalate with role \"answer\"]
 User: compare the three best-reviewed budget mechanical keyboards
@@ -112,7 +117,12 @@ pub struct Router {
     /// Falls back to `answer` when unset.
     agent: Option<Backend>,
     fillers: AtomicUsize,
+    /// `launch_app`; replaced in tests.
+    launcher: Launcher,
 }
+
+/// Starts the app named; its display name, or the tool result to answer.
+type Launcher = fn(&str) -> Result<String, String>;
 
 /// What a reply produces, in order; always ends with `Done`.
 #[derive(Debug, Clone, PartialEq)]
@@ -134,6 +144,7 @@ impl Router {
             answer: None,
             agent: None,
             fillers: AtomicUsize::new(0),
+            launcher: crate::apps::launch_app,
         }
     }
 
@@ -177,6 +188,7 @@ impl Router {
             answered: false,
             shown: false,
             start,
+            launcher: self.launcher,
         };
         let messages = vec![Message::System(SYSTEM.into()), Message::User(text.into())];
         let result = match self
@@ -250,7 +262,7 @@ impl Router {
                 return Ok(None);
             }
             messages.push(Message::from(&reply));
-            let mut follow_up = !turn.answered;
+            let mut follow_up = false;
             let mut escalation = None;
             for call in &reply.tool_calls {
                 let (result, needs_answer) = match call.name.as_str() {
@@ -272,7 +284,8 @@ impl Router {
             if escalation.is_some() {
                 return Ok(escalation);
             }
-            if !follow_up {
+            // Tools may have spoken (`launch_app` announces itself).
+            if !follow_up && turn.answered {
                 return Ok(None);
             }
         }
@@ -358,6 +371,7 @@ struct Turn<'a> {
     answered: bool,
     shown: bool,
     start: Instant,
+    launcher: Launcher,
 }
 
 #[derive(Deserialize)]
@@ -369,6 +383,11 @@ struct ShowArgs {
     document_id: Option<String>,
     #[serde(default)]
     append: bool,
+}
+
+#[derive(Deserialize)]
+struct LaunchArgs {
+    name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -428,7 +447,7 @@ impl Turn<'_> {
         }
     }
 
-    /// Runs a `show` (or unknown) tool call; returns its result and whether
+    /// Runs a `show`, `launch_app` (or unknown) tool call; returns its result and whether
     /// the model must answer it.
     fn tool(&mut self, call: &ToolCall) -> (String, bool) {
         tracing::info!("tool {} {}", call.name, call.arguments);
@@ -438,6 +457,18 @@ impl Turn<'_> {
                     let id = self.show(args);
                     (format!("Shown in the sidebar as document {id}."), false)
                 }
+                Err(e) => (format!("Invalid arguments: {e}"), true),
+            },
+            "launch_app" => match call.parse_args::<LaunchArgs>() {
+                Ok(args) => match (self.launcher)(&args.name) {
+                    Ok(name) => {
+                        if !self.answered {
+                            self.say_sentence(&format!("Opening {name}."));
+                        }
+                        (format!("Launched {name}."), false)
+                    }
+                    Err(result) => (result, true),
+                },
                 Err(e) => (format!("Invalid arguments: {e}"), true),
             },
             other => (format!("Unknown tool `{other}`."), true),
@@ -512,6 +543,18 @@ fn show_tool() -> Tool {
 fn tools() -> Vec<Tool> {
     vec![
         show_tool(),
+        Tool {
+            name: "launch_app".into(),
+            description: "Open an installed application by name, as the user said it. \
+                          Generic names (browser, file manager, terminal, text editor, \
+                          email, music player) open the user's default."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"]
+            }),
+        },
         Tool {
             name: "escalate".into(),
             description: "Hand the request to a stronger model. `answer` for knowledge, \
@@ -653,6 +696,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn silent_launch_is_announced_without_a_follow_up() {
+        let (mut router, requests) =
+            serve(vec![vec![call("launch_app", json!({"name":"my browser"}))]]).await;
+        router.launcher = |n| {
+            assert_eq!(n, "my browser");
+            Ok("Firefox".into())
+        };
+        let shared = Mutex::new(Shared::default());
+        let events = respond(&router, &shared).await;
+        assert_eq!(spoken(&events), "Opening Firefox.");
+        assert_eq!(requests.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_launch_is_answered_by_the_model() {
+        let (mut router, requests) = serve(vec![
+            vec![call("launch_app", json!({"name":"office"}))],
+            vec![text("Writer or Calc?")],
+        ])
+        .await;
+        router.launcher = |_| Err("Several apps match: Writer, Calc.".into());
+        let shared = Mutex::new(Shared::default());
+        let events = respond(&router, &shared).await;
+        assert_eq!(spoken(&events), "Writer or Calc?");
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1].contains("Several apps match"));
+    }
+
+    #[tokio::test]
     async fn silent_escalation_says_a_filler_then_the_answer() {
         let (mut router, requests) = serve(vec![
             vec![call("escalate", json!({"role":"answer","task":"AI news"}))],
@@ -758,6 +831,7 @@ mod tests {
             answered: false,
             shown: false,
             start: Instant::now(),
+            launcher: |_| unreachable!(),
         };
         turn.deliver("- a\n- b\n\nmore", "List things");
         assert!(!turn.answered);

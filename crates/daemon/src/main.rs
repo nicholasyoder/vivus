@@ -1,3 +1,4 @@
+mod apps;
 mod engine;
 mod pronounce;
 mod router;

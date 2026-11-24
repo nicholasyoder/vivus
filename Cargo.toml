@@ -14,6 +14,8 @@ vivus-audio = { path = "crates/audio" }
 vivus-dbus = { path = "crates/dbus" }
 vivus-speech = { path = "crates/speech" }
 vivus-inference = { path = "crates/inference" }
+vivus-apps = { path = "crates/apps" }
+vivus-wayland = { path = "crates/wayland" }
 
 anyhow = "1"
 thiserror = "2"

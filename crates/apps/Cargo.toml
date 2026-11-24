@@ -1,0 +1,10 @@
+[package]
+name = "vivus-apps"
+description = "Installed applications: desktop entries, spoken-name matching, launching"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tracing.workspace = true

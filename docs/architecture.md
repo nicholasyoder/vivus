@@ -51,7 +51,8 @@ crates/
   audio/       PipeWire capture (later playback)
   speech/      sherpa-onnx VAD, STT (later TTS); utterance listener
   inference/   LLM provider clients (OpenAI-compatible streaming)
-  wayland/     standard-protocol compositor backend (stub)
+  apps/        desktop entries, spoken-name matching, app launching
+  wayland/     standard-protocol compositor backend (xdg-activation so far)
 sidebar/       CMake + Qt6 Widgets project; data/sidebar.qss is the default style
 dbus/          D-Bus interface XML: the contract shared with every UI
 protocol/      custom Wayland protocols (Phase 2)

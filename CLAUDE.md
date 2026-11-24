@@ -4,7 +4,7 @@ Start with [docs/roadmap.md](docs/roadmap.md): it says where the project is and
 what's next. Topic docs in `docs/` hold the design detail
 ([vision](docs/vision.md), [architecture](docs/architecture.md),
 [inference](docs/inference.md), [speech](docs/speech.md),
-[screen-awareness](docs/screen-awareness.md), [gaze](docs/gaze.md), [settings](docs/settings.md)).
+[screen-awareness](docs/screen-awareness.md), [gaze](docs/gaze.md), [settings](docs/settings.md), [desktop-control](docs/desktop-control.md)).
 
 ## Working on roadmap items
 

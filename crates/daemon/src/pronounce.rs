@@ -322,42 +322,11 @@ fn append(path: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
     Ok(())
 }
 
-/// `Name=` of installed applications, for idle prefetch.
+/// Names of installed applications, for idle prefetch.
 pub fn app_names() -> Vec<String> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let data_home = std::env::var_os("XDG_DATA_HOME")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| home.map(|h| h.join(".local/share")));
-    let dirs = std::env::var("XDG_DATA_DIRS")
-        .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
-    let mut names = Vec::new();
-    for dir in data_home.into_iter().chain(dirs.split(':').map(PathBuf::from)) {
-        let Ok(entries) = std::fs::read_dir(dir.join("applications")) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().is_none_or(|e| e != "desktop") {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let name = text
-                .lines()
-                .skip_while(|l| l.trim() != "[Desktop Entry]")
-                .take_while(|l| !l.starts_with('[') || l.trim() == "[Desktop Entry]")
-                .find_map(|l| l.strip_prefix("Name="));
-            if let Some(name) = name
-                && !names.iter().any(|n| n == name)
-            {
-                names.push(name.to_owned());
-            }
-        }
-    }
+    let mut names: Vec<String> = vivus_apps::Apps::load().iter().map(|a| a.name.clone()).collect();
+    names.sort();
+    names.dedup();
     names
 }
 

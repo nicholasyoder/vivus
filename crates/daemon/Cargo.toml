@@ -17,6 +17,8 @@ tracing-subscriber.workspace = true
 vivus-audio.workspace = true
 vivus-speech.workspace = true
 vivus-inference.workspace = true
+vivus-apps.workspace = true
+vivus-wayland.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
