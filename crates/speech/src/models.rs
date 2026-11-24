@@ -25,6 +25,11 @@ pub const STT_MODELS: &[SttModel] = &[
         kind: SttKind::Redecode,
     },
     SttModel {
+        name: "parakeet-tdt-0.6b",
+        dir: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+        kind: SttKind::Redecode,
+    },
+    SttModel {
         name: "nemotron-streaming-0.6b",
         dir: "sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25",
         kind: SttKind::Streaming,

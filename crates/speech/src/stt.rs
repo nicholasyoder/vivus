@@ -140,6 +140,9 @@ struct Redecode {
     samples: Vec<f32>,
     decoded_len: usize,
     interval: usize,
+    /// Samples to wait before the next partial: at least `interval`, and
+    /// twice the last decode's cost so long utterances can't fall behind.
+    next_interval: usize,
     text: String,
 }
 
@@ -161,6 +164,7 @@ impl Redecode {
             samples: Vec::new(),
             decoded_len: 0,
             interval: (opts.redecode_interval * SAMPLE_RATE as f32) as usize,
+            next_interval: 0,
             text: String::new(),
         })
     }
@@ -180,10 +184,12 @@ impl Redecode {
 impl SpeechRecognizer for Redecode {
     fn accept(&mut self, samples: &[f32]) -> Option<String> {
         self.samples.extend_from_slice(samples);
-        if self.samples.len() - self.decoded_len < self.interval {
+        if self.samples.len() - self.decoded_len < self.next_interval.max(self.interval) {
             return None;
         }
+        let start = std::time::Instant::now();
         let text = self.decode_all();
+        self.next_interval = (2.0 * start.elapsed().as_secs_f32() * SAMPLE_RATE as f32) as usize;
         if text == self.text {
             return None;
         }
@@ -204,6 +210,7 @@ impl SpeechRecognizer for Redecode {
     fn reset(&mut self) {
         self.samples.clear();
         self.decoded_len = 0;
+        self.next_interval = 0;
         self.text.clear();
     }
 }

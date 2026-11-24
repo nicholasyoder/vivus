@@ -28,25 +28,33 @@ engine reply text ─► vivus-tts thread: SentenceSplitter ─► Synthesizer (
 | Tier | STT | TTS | Target machine |
 |---|---|---|---|
 | Light (default) | `parakeet-tdt-110m` (int8, ~130 MB): re-decoded, adds punctuation | `kitten-nano` (Kitten v0.8 nano, fp32, ~75 MB) | Any laptop CPU |
-| Standard | `nemotron-streaming-0.6b` (int8, 160 ms chunks, ~650 MB): native streaming | `kokoro` (Kokoro v1.0, fp32, ~380 MB) | 4+ cores, no GPU |
+| Standard | `parakeet-tdt-0.6b` (TDT 0.6B v2, int8, ~660 MB): re-decoded, adds punctuation | `kokoro` (Kokoro v1.0, fp32, ~380 MB) | 4+ cores, no GPU |
 | Remote | Groq Whisper (final only), Deepgram (streaming) | Cloud TTS | Anything with a network |
 
-Model names map to sherpa-onnx release archives in `crates/speech/src/models.rs`;
-`scripts/fetch-models.sh light|standard|all` downloads them.
+Also in the catalog: `nemotron-streaming-0.6b` (int8, 160 ms chunks, ~650 MB),
+native streaming. It was the standard tier until it proved worse in real use:
+no punctuation, and words at the edges still went missing after the padding
+fix below. Model names map to sherpa-onnx release archives in
+`crates/speech/src/models.rs`; `scripts/fetch-models.sh light|standard|all`
+downloads them (Nemotron only with `all`).
 
 ### Benchmarks
 
-Dev machine (Ryzen, 16 cores), `stt_bench`, 2 threads. "Final" is end of speech
-to final text.
+Dev machine (Ryzen, 16 cores), `stt_bench`. "Final" is end of speech to final
+text.
 
-| Model | Compute / audio time | Final, 6.6 s utterance | Final, 16.7 s utterance |
-|---|---|---|---|
-| parakeet-tdt-110m | 0.20–0.48 (grows with length) | 110 ms | 290 ms |
-| nemotron-streaming-0.6b | 0.48 (flat) | ~150 ms | ~150 ms |
+| Model | Threads | Compute / audio time | Final, 6.6 s utterance | Final, 16.7 s utterance |
+|---|---|---|---|---|
+| parakeet-tdt-110m | 2 | 0.20–0.37 | 110 ms | 310 ms |
+| parakeet-tdt-0.6b | 2 | 0.45–0.50 | 410 ms | 1010 ms |
+| parakeet-tdt-0.6b | 4 | 0.40–0.46 | 270 ms | 670 ms |
+| nemotron-streaming-0.6b | 2 | 0.48 (flat) | ~150 ms | ~150 ms |
 
-Both transcribe the test clips correctly. Re-decoding costs more the longer you
-speak, but commands are short; Nemotron's cost is flat but higher overall.
-Nemotron outputs no punctuation. Still to do: benchmark a 4-core laptop.
+All transcribe the test clips correctly. A re-decode model's final costs one
+full decode, ~60 ms per second of speech for the 0.6B at 2 threads, so short
+commands land around 150–250 ms. Partials wait at least twice the last decode's
+time, which caps partial decoding near half real time; without that the 0.6B
+fell behind live audio (1.7×) on the long clip. Still to do: benchmark a 4-core laptop.
 
 The streaming model needs silence around each utterance or it clips words at
 the edges, worst in push-to-talk, where speech runs right up to key release.
@@ -79,7 +87,8 @@ cargo run --release -p vivus-speech --example listen_file -- [--hold] [--pad sec
 ```
 
 Other sherpa-onnx models worth evaluating: Moonshine (tiny/base, quantized),
-Nemotron 3.5 streaming (multilingual), Parakeet TDT 0.6B v3 (more accurate, heavier).
+Parakeet TDT 0.6B v3 (multilingual) and the newer `-ultra`/`-redux` 0.6B archives
+(undocumented so far).
 
 ## Turn detection
 

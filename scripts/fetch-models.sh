@@ -27,9 +27,11 @@ case $tier in
         fetch_archive tts-models kitten-nano-en-v0_8-fp32
         fetch_file tts-models lexicon-en-us.txt ;;&
     standard|all)
-        fetch_archive asr-models sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25
-        fetch_archive tts-models kokoro-multi-lang-v1_0 ;;
-    light) ;;
+        fetch_archive asr-models sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8
+        fetch_archive tts-models kokoro-multi-lang-v1_0 ;;&
+    all)
+        fetch_archive asr-models sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25 ;;
+    light|standard) ;;
     *) echo "unknown tier: $tier" >&2; exit 1 ;;
 esac
 echo "models in $dest"

@@ -30,7 +30,8 @@ command = "claude"
 args = ["--allowedTools", "WebSearch,WebFetch"]
 
 # Unset stt defaults to local-speech with parakeet-tdt-110m.
-# Models: parakeet-tdt-110m (light), nemotron-streaming-0.6b (standard).
+# Models: parakeet-tdt-110m (light), parakeet-tdt-0.6b (standard),
+# nemotron-streaming-0.6b (streaming, no punctuation).
 [roles.stt]
 provider = "local-speech"
 model = "parakeet-tdt-110m"
