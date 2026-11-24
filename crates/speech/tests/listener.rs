@@ -5,8 +5,9 @@ use vivus_speech::{Event, Listener, Mode, SAMPLE_RATE, VadOptions, default_model
 const WAV: &str = "sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8/test_wavs/0.wav";
 const MODELS: [&str; 3] = ["parakeet-tdt-110m", "parakeet-tdt-0.6b", "nemotron-streaming-0.6b"];
 
-/// The clip trimmed to its speech, then `pad` seconds of silence either side.
-fn run(model: &str, mode: Mode, pad: f32) -> Option<Vec<Event>> {
+/// The clip trimmed to its speech (cut to `secs` if given), then `pad` seconds
+/// of silence either side.
+fn run(model: &str, mode: Mode, pad: f32, secs: Option<f32>) -> Option<Vec<Event>> {
     let dir = default_models_dir()?;
     let wave = sherpa_onnx::Wave::read(dir.join(WAV).to_str()?)?;
     let rec = stt::create(&dir, model, &Default::default()).ok()?;
@@ -19,6 +20,7 @@ fn run(model: &str, mode: Mode, pad: f32) -> Option<Vec<Event>> {
     let loud = |s: &&f32| s.abs() > 0.02;
     let start = samples.iter().position(|s| loud(&s))?;
     let end = samples.len() - samples.iter().rev().position(|s| loud(&s))?;
+    let end = secs.map_or(end, |s| start + (s * SAMPLE_RATE as f32) as usize);
     let audio: Vec<f32> = [&silence[..], &samples[start..end], &silence[..]].concat();
     for chunk in audio.chunks(320) {
         listener.push(chunk, &mut |e| events.push(e));
@@ -46,7 +48,7 @@ fn finals(events: &[Event]) -> Vec<&str> {
 #[test]
 fn vad_mode_segments_and_transcribes() {
     for model in MODELS {
-        let Some(events) = run(model, Mode::Vad, 1.0) else {
+        let Some(events) = run(model, Mode::Vad, 1.0, None) else {
             eprintln!("skipping {model}: models not installed");
             continue;
         };
@@ -62,7 +64,7 @@ fn vad_mode_segments_and_transcribes() {
 #[test]
 fn hold_mode_is_one_utterance() {
     for model in MODELS {
-        let Some(events) = run(model, Mode::Hold, 0.0) else {
+        let Some(events) = run(model, Mode::Hold, 0.0, None) else {
             continue;
         };
         let finals = finals(&events);
@@ -70,5 +72,19 @@ fn hold_mode_is_one_utterance() {
         let text = words(finals[0]);
         assert!(text.starts_with("well"), "{model}: {text}");
         assert!(text.ends_with("old portrait"), "{model}: {text}");
+    }
+}
+
+/// A word shorter than the VAD's `min_speech` ("wait" over a reply) is still
+/// heard, rather than dismissed as `NotSpeech`.
+#[test]
+fn short_word_is_speech() {
+    for model in MODELS {
+        let Some(events) = run(model, Mode::Vad, 1.0, Some(0.2)) else {
+            continue;
+        };
+        assert!(!events.contains(&Event::NotSpeech), "{model}: {events:?}");
+        let text = words(&finals(&events).join(" "));
+        assert_eq!(text, "well", "{model}: {events:?}");
     }
 }

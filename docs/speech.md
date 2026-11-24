@@ -18,10 +18,10 @@ engine reply text ─► vivus-tts thread: SentenceSplitter ─► Synthesizer (
 
 - **Capture** (`crates/audio`): fixed F32 / 16 kHz / mono format so PipeWire's adapter resamples and downmixes. Both streams declare the `MONO` channel position: without it WirePlumber linked the one port to the first channel only (left mic, left speaker). `[audio] input` targets a specific node; otherwise the default source. With `[audio] echo_cancel` (default on), capture goes through the echo canceller ([Barge-in](#barge-in)).
 - **Listener** (`crates/speech/src/listener.rs`), two modes:
-  - *Vad* (toggle-listen, conversation): VAD splits utterances. ~0.5 s of preroll is kept so the first syllable isn't lost.
+  - *Vad* (toggle-listen, conversation): VAD splits utterances. ~0.5 s of preroll is kept so the first syllable isn't lost. A burst too short for the VAD is transcribed and kept if it's a word ([Barge-in](#barge-in)).
   - *Hold* (push-to-talk): everything until release is one utterance, so pauses don't split it.
 - **STT interface** (`SpeechRecognizer`): feed samples, get partials when the text changes, `finish()` for the final. A provider that only does whole utterances (Groq Whisper) just emits a final with no partials.
-- **Two STT implementations:** native streaming (sherpa `OnlineRecognizer`) and re-decode (an offline model re-run on the growing utterance every 0.3 s of new audio).
+- **Two STT implementations:** native streaming (sherpa `OnlineRecognizer`) and re-decode (an offline model re-run on the growing utterance every 0.3 s of new audio, or less often when decodes get slow).
 
 ## Tiers
 
@@ -289,6 +289,13 @@ echo cancellation so the assistant doesn't hear itself (done 2026-11-24).
   burst ends first (200 ms of silence) it emits `NotSpeech` and playback
   resumes, so a cough or a door costs a short hiccup, not the reply. Only in
   conversation (VAD) mode; in push-to-talk, pressing the key interrupts.
+- **Short words** (2026-11-24): a one-word interrupt like "wait" can stay under
+  the main VAD's 250 ms, more so with its onset damaged by the canceller, and
+  was dismissed as `NotSpeech`. Now the burst (with preroll) is transcribed
+  first; if it holds a real word (not empty, a stray letter or a filler like
+  "um") it becomes `SpeechStarted` + `Final`, so it interrupts and is sent on
+  as the user's utterance. Same outside replies: a lone "yes" of 150–250 ms
+  used to produce nothing. Costs one decode of under a second of audio.
 - **Measured** with `scripts/fake-room.sh` (echo leaks from a virtual sink into
   a virtual mic ~20 dB below the voice; no real acoustics), Kokoro/Kitten
   speech as "you":

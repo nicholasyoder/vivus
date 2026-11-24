@@ -63,6 +63,9 @@ pub struct Listener {
     /// Same model with a shorter `min_speech`, for `SpeechPossible`.
     quick_vad: VoiceActivityDetector,
     possible: bool,
+    /// Audio since `SpeechPossible` (plus preroll), transcribed if the burst
+    /// ends unconfirmed: a short word like "wait" can stay under `min_speech`.
+    burst: Vec<f32>,
     stt: Box<dyn SpeechRecognizer>,
     mode: Mode,
     /// Audio kept from before VAD fired, so the first syllable isn't lost.
@@ -103,6 +106,7 @@ impl Listener {
             vad: create(opts.threshold, opts.min_speech, opts.min_silence)?,
             quick_vad: create(opts.threshold, opts.min_speech_possible, POSSIBLE_SILENCE)?,
             possible: false,
+            burst: Vec::new(),
             stt,
             mode: Mode::Vad,
             preroll: VecDeque::new(),
@@ -153,9 +157,16 @@ impl Listener {
             // SpeechStarted supersedes a pending SpeechPossible.
             if speech {
                 self.possible = false;
-            } else if quick != self.possible {
-                self.possible = quick;
-                out(if quick { Event::SpeechPossible } else { Event::NotSpeech });
+                self.burst.clear();
+            } else if quick && !self.possible {
+                self.possible = true;
+                self.burst.extend(&self.preroll);
+                out(Event::SpeechPossible);
+            } else if !quick && self.possible {
+                self.possible = false;
+                self.burst.extend(window);
+                self.end_burst(out);
+                return;
             }
         }
 
@@ -171,9 +182,27 @@ impl Listener {
             self.feed(&preroll, out);
             self.feed(window, out);
         } else {
+            if self.possible {
+                self.burst.extend(window);
+            }
             self.preroll.extend(window);
             let excess = self.preroll.len().saturating_sub(self.preroll_len);
             self.preroll.drain(..excess);
+        }
+    }
+
+    /// A burst too short for the main VAD: speech if it holds a real word.
+    fn end_burst(&mut self, out: &mut impl FnMut(Event)) {
+        let burst = std::mem::take(&mut self.burst);
+        self.stt.accept(&burst);
+        let text = self.stt.finish();
+        if is_word(&text) {
+            // The burst is consumed; don't feed it again as the next preroll.
+            self.preroll.clear();
+            out(Event::SpeechStarted);
+            out(Event::Final(text));
+        } else {
+            out(Event::NotSpeech);
         }
     }
 
@@ -196,6 +225,7 @@ impl Listener {
         self.vad.reset();
         self.quick_vad.reset();
         self.possible = false;
+        self.burst.clear();
     }
 
     /// Drops audio and any utterance in progress (cancel / stop listening).
@@ -204,8 +234,35 @@ impl Listener {
         self.vad.reset();
         self.quick_vad.reset();
         self.possible = false;
+        self.burst.clear();
         self.preroll.clear();
         self.window.clear();
         self.in_utterance = false;
+    }
+}
+
+/// Not empty, not a filler or a stray letter (what a cough or breath decodes to).
+fn is_word(text: &str) -> bool {
+    const FILLERS: &[&str] = &["ah", "eh", "er", "hm", "hmm", "huh", "mhm", "mm", "uh", "um"];
+    text.split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .filter(|w| !w.is_empty())
+        .any(|w| {
+            let w = w.to_lowercase();
+            w.chars().count() > 1 && !FILLERS.contains(&w.as_str())
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_word;
+
+    #[test]
+    fn words_and_noise() {
+        for t in ["Wait.", "No", "OK!", "Hey, stop"] {
+            assert!(is_word(t), "{t}");
+        }
+        for t in ["", "A", "Mm.", "Hmm, uh", "  ."] {
+            assert!(!is_word(t), "{t}");
+        }
     }
 }

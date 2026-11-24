@@ -1,5 +1,5 @@
 //! Runs WAVs through the full listener (VAD + STT) as live capture would and
-//! prints each final. Any sample rate; resampled to 16 kHz.
+//! prints its events (finals quoted, partials left out). Any sample rate; resampled to 16 kHz.
 //! Usage: listen_file [--hold] [--pad secs] <model> <file.wav>...
 //! --hold: push-to-talk, finish right after the clip; --pad: silence around it (default 1).
 
@@ -49,16 +49,16 @@ fn main() {
         let audio = resample(wave.samples(), wave.sample_rate());
         let audio: Vec<f32> = [&silence[..], &audio, &silence[..]].concat();
         let mut finals = Vec::new();
-        let mut on = |e| {
-            if let Event::Final(t) = e {
-                finals.push(t);
-            }
+        let mut on = |e| match e {
+            Event::Final(t) => finals.push(format!("{t:?}")),
+            Event::Partial(_) => {}
+            e => finals.push(format!("{e:?}")),
         };
         listener.set_mode(if hold { Mode::Hold } else { Mode::Vad });
         for chunk in audio.chunks(320) {
             listener.push(chunk, &mut on);
         }
         listener.finish(&mut on);
-        println!("{wav}: {finals:?}");
+        println!("{wav}: {}", finals.join(" "));
     }
 }
