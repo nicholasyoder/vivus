@@ -1,8 +1,9 @@
 //! Headless Claude Code as a provider: `claude -p --output-format stream-json`,
-//! one JSON object per line. The prompt goes in on stdin.
+//! one JSON object per line. The prompt goes in on stdin. Runs happen in a
+//! workspace directory of their own, with the home directory added for access.
 
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use serde_json::Value;
@@ -17,6 +18,11 @@ pub enum ClaudeError {
     #[error("starting `{command}`: {source}")]
     Spawn {
         command: String,
+        source: std::io::Error,
+    },
+    #[error("preparing workspace {path}: {source}")]
+    Workspace {
+        path: PathBuf,
         source: std::io::Error,
     },
     #[error("reading Claude Code output: {0}")]
@@ -59,20 +65,50 @@ pub struct ClaudeResult {
     pub cost_usd: Option<f64>,
 }
 
+/// Written into a new workspace; never overwritten, so the user can edit it.
+const WORKSPACE_CLAUDE_MD: &str = "\
+# Vivus workspace
+
+This is the working directory for Vivus's agent: requests the user spoke to their
+desktop assistant, run headless with no one at the keyboard. How to format the
+reply is in the system prompt.
+
+- The user's home directory is accessible too (`--add-dir`); this folder is yours.
+- Keep reusable helper scripts in `scripts/`, each with a one-line comment saying
+  what it does. Check there before writing a new one.
+- Permissions run in auto mode and nobody can approve a prompt. If an action is
+  blocked, don't hunt for a workaround: say what you'd need and stop.
+";
+
 impl ClaudeCode {
+    /// Runs in the current directory; see [`ClaudeCode::from_provider`] for the workspace.
     pub fn new(command: impl Into<String>, args: Vec<String>) -> Self {
         Self {
             command: command.into(),
             args,
-            cwd: std::env::var_os("HOME").map(PathBuf::from),
+            cwd: None,
         }
     }
 
+    /// Creates the provider's workspace (and its `CLAUDE.md`) if it's missing.
     pub fn from_provider(provider: &Provider) -> Result<Self, ClaudeError> {
-        match provider {
-            Provider::ClaudeCode { command, args } => Ok(Self::new(command, args.clone())),
-            _ => Err(ClaudeError::WrongKind),
+        let Provider::ClaudeCode {
+            command,
+            args,
+            workspace,
+        } = provider
+        else {
+            return Err(ClaudeError::WrongKind);
+        };
+        let mut cc = Self::new(command, args.clone());
+        if let Some(dir) = workspace {
+            prepare_workspace(dir).map_err(|source| ClaudeError::Workspace {
+                path: dir.clone(),
+                source,
+            })?;
+            cc.cwd = Some(dir.clone());
         }
+        Ok(cc)
     }
 
     /// Starts a run. Dropping the returned `ClaudeRun` kills the process.
@@ -84,6 +120,9 @@ impl ClaudeCode {
         }
         if let Some(system) = &req.system {
             cmd.args(["--append-system-prompt", system]);
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            cmd.arg("--add-dir").arg(home);
         }
         cmd.args(&self.args)
             .stdin(Stdio::piped())
@@ -108,6 +147,15 @@ impl ClaudeCode {
             done: false,
         })
     }
+}
+
+fn prepare_workspace(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir.join("scripts"))?;
+    let md = dir.join("CLAUDE.md");
+    if !md.exists() {
+        std::fs::write(md, WORKSPACE_CLAUDE_MD)?;
+    }
+    Ok(())
 }
 
 pub struct ClaudeRun {
@@ -235,5 +283,37 @@ mod tests {
         assert!(matches!(ev, ClaudeEvent::Result(r) if r.text == "hello"));
         assert!(run.next().await.is_none());
         let _ = std::fs::remove_file(path);
+    }
+
+    /// The workspace is created with its CLAUDE.md, kept on later runs, and is the run's cwd.
+    #[tokio::test]
+    async fn runs_in_a_prepared_workspace() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("vivus-ws-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let fake = root.join("fake-claude");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nprintf '{\"type\":\"result\",\"is_error\":false,\"result\":\"%s\"}\\n' \"$PWD\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let ws = root.join("workspace");
+        let provider = Provider::ClaudeCode {
+            command: fake.to_str().unwrap().into(),
+            args: vec![],
+            workspace: Some(ws.clone()),
+        };
+        let cc = ClaudeCode::from_provider(&provider).unwrap();
+        assert!(ws.join("scripts").is_dir());
+        std::fs::write(ws.join("CLAUDE.md"), "edited").unwrap();
+        ClaudeCode::from_provider(&provider).unwrap();
+        assert_eq!(std::fs::read_to_string(ws.join("CLAUDE.md")).unwrap(), "edited");
+
+        let mut run = cc.run(&ClaudeRequest::default()).await.unwrap();
+        let ev = run.next().await.unwrap().unwrap();
+        assert!(matches!(ev, ClaudeEvent::Result(r) if r.text == ws.to_str().unwrap()));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

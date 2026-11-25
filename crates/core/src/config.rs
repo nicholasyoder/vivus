@@ -179,15 +179,38 @@ impl Default for Speech {
 pub struct ClaudeCodeConfig {
     pub command: String,
     /// Appended after `-p --output-format stream-json`. Headless runs can't
-    /// ask for permission, so this is where tools get allowed.
+    /// ask for permission, so the permission mode is set here.
     pub args: Vec<String>,
+    /// Working directory for runs. Defaults to `~/.local/share/vivus/workspace`.
+    pub workspace: Option<PathBuf>,
 }
 
 impl Default for ClaudeCodeConfig {
     fn default() -> Self {
         Self {
             command: "claude".into(),
-            args: vec!["--allowedTools".into(), "WebSearch,WebFetch".into()],
+            args: vec!["--permission-mode".into(), "auto".into()],
+            workspace: None,
+        }
+    }
+}
+
+impl ClaudeCodeConfig {
+    /// `workspace` with `~` expanded, else `$XDG_DATA_HOME/vivus/workspace`.
+    pub fn workspace_dir(&self) -> Option<PathBuf> {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        match &self.workspace {
+            Some(p) => match (p.strip_prefix("~"), home) {
+                (Ok(rest), Some(home)) => Some(home.join(rest)),
+                _ => Some(p.clone()),
+            },
+            None => {
+                let data = std::env::var_os("XDG_DATA_HOME")
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from)
+                    .or_else(|| home.map(|h| h.join(".local/share")))?;
+                Some(data.join("vivus/workspace"))
+            }
         }
     }
 }
@@ -205,6 +228,7 @@ pub enum Provider {
     ClaudeCode {
         command: String,
         args: Vec<String>,
+        workspace: Option<PathBuf>,
     },
 }
 
@@ -278,6 +302,7 @@ impl Config {
             return Some(Provider::ClaudeCode {
                 command: c.command.clone(),
                 args: c.args.clone(),
+                workspace: c.workspace_dir(),
             });
         }
         self.providers

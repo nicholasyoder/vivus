@@ -25,12 +25,13 @@ api_key_env = "NANOGPT_API_KEY"
 threads = 2
 
 # Headless Claude Code (`claude -p`), always available to the answer and agent
-# roles as provider "claude-code". It runs in your home directory and can't ask
-# for permission, so only the tools listed in args are allowed beyond
-# read-only ones.
+# roles as provider "claude-code". It runs in its own workspace (created with a
+# CLAUDE.md you can edit) with your home directory added. Nobody can approve a
+# permission prompt, so auto mode lets a classifier decide what may run.
 [claude_code]
 command = "claude"
-args = ["--allowedTools", "WebSearch,WebFetch"]
+args = ["--permission-mode", "auto"]
+# workspace = "~/.local/share/vivus/workspace"
 
 # Speech roles run locally and name no provider.
 # Unset stt means parakeet-tdt-110m.

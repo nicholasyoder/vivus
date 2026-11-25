@@ -284,7 +284,8 @@ Three kinds of thing serve roles, and the config gives each its own place:
   provider: unset means local speech, and a speech role naming one is
   refused until remote speech exists.
 - **Claude Code**: always available as provider `claude-code` (answer and
-  agent), configured by `[claude_code]` (`command`, `args`). The name is
+  agent), configured by `[claude_code]` (`command`, `args`, `workspace`;
+  see [inference.md](inference.md#claude-code-workspace)). The name is
   reserved in `[providers]`.
 
 `Config::provider(name)` resolves a role's provider to the `Provider` enum

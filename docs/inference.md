@@ -160,9 +160,8 @@ now a canned filler instead ([Escalation](#escalation)).
   yet, only `show` as a tool, and no `max_tokens`.
 - **Claude Code** (`crates/inference/src/claude_code.rs`): `claude -p
   --output-format stream-json --verbose [--model M] --append-system-prompt …`
-  plus the provider's `args`, prompt on stdin, run in `$HOME`, killed on drop
-  (cancel). Headless runs can't ask for permission, so the provider's `args`
-  allow tools (default `--allowedTools WebSearch,WebFetch`). The final `result`
+  --add-dir $HOME` plus the provider's `args`, prompt on stdin, run in the
+  [workspace](#claude-code-workspace), killed on drop (cancel). The final `result`
   is split: the first paragraph is spoken, the rest becomes a sidebar document
   (titled by its heading, else the task). If the first paragraph looks like
   markdown or runs over 400 characters, all of it goes to the sidebar.
@@ -183,6 +182,36 @@ on nano-gpt, `agent` Claude Code with its default model):
   `model = "sonnet"` (or similar) on `[roles.agent]`.
 - The state stays `speaking` from the filler until the escalated reply ends,
   and a long agent run is silent after the filler.
+
+### Claude Code workspace
+
+Runs happen in `[claude_code] workspace` (default
+`~/.local/share/vivus/workspace`), created when the provider is built with a
+`scripts/` folder and a `CLAUDE.md` (written only if missing, so it can be
+edited): it says requests are spoken and headless, to keep reusable helpers in
+`scripts/`, and to stop rather than work around a blocked action. A directory
+of its own also gives Vivus runs their own Claude Code auto-memory and session
+history, apart from the user's projects and `~/CLAUDE.md`. `--add-dir $HOME`
+lets it read and edit the rest of the home directory.
+
+**Permissions.** A headless run can't ask, so anything that would prompt is
+denied. The first default, `--allowedTools WebSearch,WebFetch`, denied nearly
+every Bash call ("how much RAM do I have" failed). The default is now
+`--permission-mode auto`: Claude Code's classifier approves routine actions
+and blocks risky ones. Considered and not used: `dontAsk` with an allowlist
+(always one command short) and `bypassPermissions` (a misheard request or
+injected web text could run anything). Asking the user through the sidebar or
+voice via `--permission-prompt-tool` is a roadmap item.
+
+The permission flags go on the command line, not in the workspace's
+`.claude/settings.json`: Claude Code ignores parts of a project's settings
+(`permissions.additionalDirectories` at least) until someone accepts that
+directory's trust dialog interactively (Claude Code 2.1.325, 2026-11-25).
+
+Live run (2026-11-25, `vivusctl ask`, agent Sonnet): "check how much RAM and
+disk space this computer has, and save a reusable script for it": Bash
+allowed, `scripts/sysinfo.sh` written and run, three spoken sentences, 7.8 s,
+\$0.07.
 
 ## Conversation memory
 
