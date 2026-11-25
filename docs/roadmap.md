@@ -50,7 +50,7 @@ everyday use work comes first, then smarter answers, then polish.
 
 - [x] Install and autostart (no systemd unit); `.desktop` entry `org.vivus.Vivus` (portal and sidebar app ID); `vivusctl models list|fetch` replaces `scripts/fetch-models.sh` (2026-11-24, `cd69692`) — [README](../README.md#install)
 - [x] `org.vivus.Settings` D-Bus interface (`Get`/`Set`/`Reset`/`Changed`); daemon writes config with `toml_edit`, watches the file and reloads live; `vivusctl settings` (2026-11-24, `5a7ea5c`) — [settings.md](settings.md#d-bus)
-- [x] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon (2026-11-24, `HASH`) — [settings.md](settings.md#audio-devices)
+- [x] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon (2026-11-24, `fe8d56c`) — [settings.md](settings.md#audio-devices)
 - [ ] Sidebar settings page: input/output device pickers, mic level meter with a clip indicator, end-of-turn silence, speech volume, duck volume — [settings.md](settings.md)
 - [ ] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice — [settings.md](settings.md#roles-and-providers)
 
