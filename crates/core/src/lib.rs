@@ -3,6 +3,7 @@
 pub mod clipboard;
 pub mod config;
 pub mod documents;
+pub mod settings;
 pub mod state;
 pub mod windows;
 

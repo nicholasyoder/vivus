@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -21,7 +21,7 @@ pub enum ConfigError {
     UnknownProvider { role: String, provider: String },
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
@@ -39,7 +39,7 @@ pub struct Config {
 /// Triggers requested from the `GlobalShortcuts` portal, in the shortcuts-spec
 /// format (`LOGO+space`). Empty leaves one unbound. Backends with a dialog
 /// treat these as suggestions.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Shortcuts {
     /// Hold to talk; release to send.
@@ -59,7 +59,7 @@ impl Default for Shortcuts {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Debug {
     /// Show what was heard but don't answer it (no LLM, no speech), for
@@ -67,7 +67,7 @@ pub struct Debug {
     pub transcribe_only: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Audio {
     /// PipeWire node to capture from. Default source if unset.
@@ -104,7 +104,7 @@ impl Default for Audio {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Provider {
     OpenaiCompatible {
@@ -142,7 +142,7 @@ fn default_claude_args() -> Vec<String> {
     vec!["--allowedTools".into(), "WebSearch,WebFetch".into()]
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Roles {
     pub stt: Option<Role>,
@@ -168,7 +168,7 @@ impl Roles {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Role {
     pub provider: String,
@@ -194,22 +194,34 @@ impl Config {
 
     /// A missing file yields the empty default config.
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
-        let text = match std::fs::read_to_string(path) {
-            Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
-            Err(source) => {
-                return Err(ConfigError::Io {
-                    path: path.into(),
-                    source,
-                });
-            }
-        };
-        let config: Self = toml::from_str(&text).map_err(|source| ConfigError::Parse {
+        Self::parse(&Self::read(path)?, path)
+    }
+
+    /// The file's text; empty if it doesn't exist.
+    pub fn read(path: &Path) -> Result<String, ConfigError> {
+        match std::fs::read_to_string(path) {
+            Ok(t) => Ok(t),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(source) => Err(ConfigError::Io {
+                path: path.into(),
+                source,
+            }),
+        }
+    }
+
+    /// `path` is only for error messages.
+    pub fn parse(text: &str, path: &Path) -> Result<Self, ConfigError> {
+        let config: Self = toml::from_str(text).map_err(|source| ConfigError::Parse {
             path: path.into(),
             source,
         })?;
         config.validate()?;
         Ok(config)
+    }
+
+    /// For `org.vivus.Settings.Get`.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).expect("config serializes")
     }
 
     fn validate(&self) -> Result<(), ConfigError> {

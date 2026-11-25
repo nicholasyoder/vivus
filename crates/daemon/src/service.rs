@@ -4,7 +4,10 @@
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
+use vivus_core::settings::Value as SettingValue;
 use zbus::object_server::SignalEmitter;
+use zbus::zvariant::OwnedValue;
 use zbus::{fdo, interface};
 
 use crate::engine::{Command, Shared};
@@ -111,4 +114,45 @@ impl Documents {
         title: &str,
         markdown: &str,
     ) -> zbus::Result<()>;
+}
+
+pub struct Settings {
+    tx: UnboundedSender<Command>,
+    shared: Arc<Mutex<Shared>>,
+}
+
+impl Settings {
+    pub fn new(tx: UnboundedSender<Command>, shared: Arc<Mutex<Shared>>) -> Self {
+        Self { tx, shared }
+    }
+
+    /// The engine owns the file; wait for it to accept or refuse the edit.
+    async fn edit(&self, path: String, value: Option<SettingValue>) -> fdo::Result<()> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(Command::EditSetting { path, value, reply })
+            .map_err(|_| fdo::Error::Failed("engine is not running".into()))?;
+        rx.await
+            .map_err(|_| fdo::Error::Failed("engine dropped the request".into()))?
+            .map_err(fdo::Error::InvalidArgs)
+    }
+}
+
+#[interface(name = "org.vivus.Settings")]
+impl Settings {
+    async fn get(&self) -> String {
+        self.shared.lock().unwrap().config_json.clone()
+    }
+
+    async fn set(&self, path: String, value: OwnedValue) -> fdo::Result<()> {
+        let value = crate::settings::to_toml(&value).map_err(fdo::Error::InvalidArgs)?;
+        self.edit(path, Some(value)).await
+    }
+
+    async fn reset(&self, path: String) -> fdo::Result<()> {
+        self.edit(path, None).await
+    }
+
+    #[zbus(signal)]
+    pub async fn changed(emitter: &SignalEmitter<'_>, paths: &[String]) -> zbus::Result<()>;
 }

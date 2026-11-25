@@ -4,6 +4,7 @@ mod engine;
 mod pronounce;
 mod router;
 mod service;
+mod settings;
 mod shortcuts;
 mod speaker;
 mod voice;
@@ -17,7 +18,7 @@ use tokio::sync::mpsc;
 use tracing_subscriber::EnvFilter;
 use vivus_core::Config;
 
-use crate::engine::{Command, Engine, Shared};
+use crate::engine::{Command, ConfigFile, Engine, Shared};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -25,16 +26,31 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let config = match Config::default_path() {
-        Some(path) => {
-            tracing::info!("config: {}", path.display());
-            Config::load(&path)?
+    let path = Config::default_path();
+    let text = match &path {
+        Some(p) => {
+            tracing::info!("config: {}", p.display());
+            Config::read(p)?
         }
+        None => String::new(),
+    };
+    let config = match &path {
+        Some(p) => Config::parse(&text, p)?,
         None => Config::default(),
     };
 
-    let shared = Arc::new(Mutex::new(Shared::default()));
+    let shared = Arc::new(Mutex::new(Shared {
+        config_json: config.to_json(),
+        ..Default::default()
+    }));
     let (tx, rx) = mpsc::unbounded_channel();
+
+    // Dropping the watcher stops it, so it lives as long as main.
+    let _watcher = path.as_deref().and_then(|p| {
+        settings::watch(p, tx.clone())
+            .inspect_err(|e| tracing::warn!("not watching the config file: {e:#}"))
+            .ok()
+    });
 
     let conn = zbus::connection::Builder::session()?
         .name(vivus_dbus::SERVICE)?
@@ -43,6 +59,10 @@ async fn main() -> anyhow::Result<()> {
             service::Assistant::new(tx.clone(), shared.clone()),
         )?
         .serve_at(vivus_dbus::PATH, service::Documents::new(shared.clone()))?
+        .serve_at(
+            vivus_dbus::PATH,
+            service::Settings::new(tx.clone(), shared.clone()),
+        )?
         .build()
         .await
         .context("registering org.vivus on the session bus (is another daemon running?)")?;
@@ -78,7 +98,18 @@ async fn main() -> anyhow::Result<()> {
 
     shortcuts::spawn(&config.shortcuts, tx.clone(), conn.clone());
 
-    let engine = tokio::spawn(Engine::new(config, conn, tx, shared, windows, clipboard).run(rx));
+    let engine = tokio::spawn(
+        Engine::new(
+            config,
+            ConfigFile { path, text },
+            conn,
+            tx,
+            shared,
+            windows,
+            clipboard,
+        )
+        .run(rx),
+    );
 
     let mut sigterm = signal(SignalKind::terminate())?;
     tokio::select! {

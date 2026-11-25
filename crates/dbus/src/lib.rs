@@ -41,3 +41,17 @@ pub trait Documents {
     #[zbus(signal)]
     fn document_changed(&self, id: String, title: String, markdown: String) -> zbus::Result<()>;
 }
+
+#[proxy(
+    interface = "org.vivus.Settings",
+    default_service = "org.vivus",
+    default_path = "/org/vivus"
+)]
+pub trait Settings {
+    fn get(&self) -> zbus::Result<String>;
+    fn set(&self, path: &str, value: &zbus::zvariant::Value<'_>) -> zbus::Result<()>;
+    fn reset(&self, path: &str) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn changed(&self, paths: Vec<String>) -> zbus::Result<()>;
+}

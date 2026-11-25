@@ -22,6 +22,7 @@ vivus-apps.workspace = true
 vivus-wayland.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+notify = "8.2.1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["io-util", "net"] }

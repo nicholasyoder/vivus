@@ -2,10 +2,15 @@
 //! router runs as a task whose events come back as `Command::Reply`, tagged
 //! with a generation so events from a cancelled reply are ignored.
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use anyhow::Context;
+
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::oneshot;
 use tokio::task::AbortHandle;
+use vivus_core::settings::Value as SettingValue;
 use vivus_core::{AssistantState, Config, DocumentStore};
 use vivus_speech::{Event, Mode};
 use zbus::Connection;
@@ -13,6 +18,7 @@ use zbus::Connection;
 use crate::clipboard::SharedClipboard;
 use crate::router::{ReplyEvent, Router};
 use crate::service;
+use crate::settings;
 use crate::speaker::Speaker;
 use crate::voice::Voice;
 use crate::windows::SharedWindows;
@@ -23,6 +29,15 @@ use crate::windows::SharedWindows;
 pub struct Shared {
     pub state: AssistantState,
     pub documents: DocumentStore,
+    /// The effective config, for `org.vivus.Settings.Get`.
+    pub config_json: String,
+}
+
+/// Where the config lives and what it last contained, to tell our own writes
+/// from hand edits.
+pub struct ConfigFile {
+    pub path: Option<PathBuf>,
+    pub text: String,
 }
 
 #[derive(Debug)]
@@ -44,6 +59,14 @@ pub enum Command {
         generation: u64,
         event: ReplyEvent,
     },
+    /// `org.vivus.Settings.Set` (`Some`) or `Reset` (`None`).
+    EditSetting {
+        path: String,
+        value: Option<SettingValue>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// The config file may have been edited by hand.
+    ConfigFileChanged,
 }
 
 /// The reply in progress.
@@ -58,6 +81,7 @@ struct Reply {
 
 pub struct Engine {
     config: Config,
+    config_file: ConfigFile,
     conn: Connection,
     tx: UnboundedSender<Command>,
     shared: Arc<Mutex<Shared>>,
@@ -78,6 +102,7 @@ pub struct Engine {
 impl Engine {
     pub fn new(
         config: Config,
+        config_file: ConfigFile,
         conn: Connection,
         tx: UnboundedSender<Command>,
         shared: Arc<Mutex<Shared>>,
@@ -86,6 +111,7 @@ impl Engine {
     ) -> Self {
         Self {
             config,
+            config_file,
             conn,
             tx,
             shared,
@@ -180,6 +206,14 @@ impl Engine {
                 self.respond(&text).await?;
             }
             Command::Speech(event) => self.on_speech(event).await?,
+            Command::EditSetting { path, value, reply } => {
+                let result = self.edit_setting(&path, value).await;
+                if let Err(e) = &result {
+                    tracing::info!("setting {path} refused: {e:#}");
+                }
+                let _ = reply.send(result.map_err(|e| format!("{e:#}")));
+            }
+            Command::ConfigFileChanged => self.reload_config().await?,
             Command::Reply { generation, event } => {
                 if self
                     .reply
@@ -314,6 +348,79 @@ impl Engine {
             self.router = Some(Arc::new(router));
         }
         Ok(self.router.clone().unwrap())
+    }
+
+    async fn edit_setting(
+        &mut self,
+        path: &str,
+        value: Option<SettingValue>,
+    ) -> anyhow::Result<()> {
+        let file = self
+            .config_file
+            .path
+            .clone()
+            .context("no config path (HOME is unset)")?;
+        // Edit what's on disk now, in case a hand edit hasn't been reloaded yet.
+        let current = Config::read(&file)?;
+        let (text, config) = vivus_core::settings::edit(&current, &file, path, value)?;
+        settings::write(&file, &text)?;
+        self.config_file.text = text;
+        Ok(self.apply_config(config).await?)
+    }
+
+    async fn reload_config(&mut self) -> zbus::Result<()> {
+        let Some(file) = &self.config_file.path else {
+            return Ok(());
+        };
+        let text = match Config::read(file) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("{e}");
+                return Ok(());
+            }
+        };
+        if text == self.config_file.text {
+            return Ok(());
+        }
+        self.config_file.text = text;
+        match Config::parse(&self.config_file.text, file) {
+            Ok(config) => self.apply_config(config).await,
+            Err(e) => {
+                tracing::warn!("config has errors, keeping the last good one: {e}");
+                Ok(())
+            }
+        }
+    }
+
+    async fn apply_config(&mut self, config: Config) -> zbus::Result<()> {
+        let paths = vivus_core::settings::changed_paths(&self.config, &config);
+        if paths.is_empty() {
+            return Ok(());
+        }
+        tracing::info!("config changed: {}", paths.join(", "));
+        let later: Vec<_> = paths
+            .iter()
+            .filter(|p| settings::needs_restart(p))
+            .cloned()
+            .collect();
+        if !later.is_empty() {
+            tracing::info!("applies after restart: {}", later.join(", "));
+        }
+        // Rebuilt from the new config on the next turn.
+        if paths
+            .iter()
+            .any(|p| p.starts_with("roles.") || p.starts_with("providers."))
+        {
+            self.router = None;
+        }
+        self.shared.lock().unwrap().config_json = config.to_json();
+        self.config = config;
+        let iface = self
+            .conn
+            .object_server()
+            .interface::<_, service::Settings>(vivus_dbus::PATH)
+            .await?;
+        service::Settings::changed(iface.signal_emitter(), &paths).await
     }
 
     async fn on_reply(&mut self, event: ReplyEvent) -> zbus::Result<()> {

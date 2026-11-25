@@ -33,10 +33,18 @@ struct Model {
 }
 
 const fn file(tag: &'static str, name: &'static str) -> Asset {
-    Asset { tag, name, archive: false }
+    Asset {
+        tag,
+        name,
+        archive: false,
+    }
 }
 const fn archive(tag: &'static str, name: &'static str) -> Asset {
-    Asset { tag, name, archive: true }
+    Asset {
+        tag,
+        name,
+        archive: true,
+    }
 }
 
 const MODELS: &[Model] = &[
@@ -68,7 +76,10 @@ const MODELS: &[Model] = &[
         name: "parakeet-tdt-0.6b",
         what: "STT",
         tier: Tier::Standard,
-        assets: &[archive("asr-models", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8")],
+        assets: &[archive(
+            "asr-models",
+            "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+        )],
     },
     Model {
         name: "kokoro",
@@ -168,7 +179,11 @@ pub async fn fetch(dir: &Path, wanted: &[String]) -> anyhow::Result<()> {
 }
 
 async fn fetch_asset(client: &reqwest::Client, dir: &Path, a: &Asset) -> anyhow::Result<()> {
-    let file = if a.archive { format!("{}.tar.bz2", a.name) } else { a.name.into() };
+    let file = if a.archive {
+        format!("{}.tar.bz2", a.name)
+    } else {
+        a.name.into()
+    };
     let url = format!("{RELEASES}/{}/{file}", a.tag);
     let part = dir.join(format!(".{file}.part"));
     download(client, &url, &part, a.name).await?;
@@ -183,7 +198,12 @@ async fn fetch_asset(client: &reqwest::Client, dir: &Path, a: &Asset) -> anyhow:
 }
 
 /// Streams to `dest`, overwriting a stale partial download.
-async fn download(client: &reqwest::Client, url: &str, dest: &Path, label: &str) -> anyhow::Result<()> {
+async fn download(
+    client: &reqwest::Client,
+    url: &str,
+    dest: &Path,
+    label: &str,
+) -> anyhow::Result<()> {
     let mut resp = client.get(url).send().await?.error_for_status()?;
     let total = resp.content_length();
     let mut out = std::fs::File::create(dest)?;
@@ -230,7 +250,11 @@ mod tests {
     use super::*;
 
     fn assets() -> Vec<&'static str> {
-        MODELS.iter().flat_map(|m| m.assets).map(|a| a.name).collect()
+        MODELS
+            .iter()
+            .flat_map(|m| m.assets)
+            .map(|a| a.name)
+            .collect()
     }
 
     #[test]
@@ -245,7 +269,11 @@ mod tests {
         for dir in need {
             assert!(have.contains(&dir), "no download for {dir}");
         }
-        for m in STT_MODELS.iter().map(|m| m.name).chain(TTS_MODELS.iter().map(|m| m.name)) {
+        for m in STT_MODELS
+            .iter()
+            .map(|m| m.name)
+            .chain(TTS_MODELS.iter().map(|m| m.name))
+        {
             assert!(MODELS.iter().any(|d| d.name == m), "no download named {m}");
         }
     }
@@ -256,8 +284,14 @@ mod tests {
             let w: Vec<String> = w.iter().map(|s| s.to_string()).collect();
             select(&w).unwrap().iter().map(|m| m.name).collect()
         };
-        assert_eq!(names(&["light"]), ["silero-vad", "parakeet-tdt-110m", "kitten-nano"]);
-        assert_eq!(names(&["standard"]), ["silero-vad", "parakeet-tdt-0.6b", "kokoro"]);
+        assert_eq!(
+            names(&["light"]),
+            ["silero-vad", "parakeet-tdt-110m", "kitten-nano"]
+        );
+        assert_eq!(
+            names(&["standard"]),
+            ["silero-vad", "parakeet-tdt-0.6b", "kokoro"]
+        );
         assert_eq!(names(&["light", "kokoro", "kitten-nano"]).len(), 4);
         assert_eq!(names(&["all"]).len(), MODELS.len());
         assert!(select(&["nope".into()]).is_err());

@@ -56,4 +56,27 @@
       <arg name="markdown" type="s"/>
     </signal>
   </interface>
+
+  <!-- Edits ~/.config/vivus/config.toml; the daemon validates, writes and applies.
+       Paths are dotted keys, e.g. audio.input, roles.stt.model. -->
+  <interface name="org.vivus.Settings">
+    <!-- The effective config as JSON, defaults filled in (unset options are null). -->
+    <method name="Get">
+      <arg name="json" type="s" direction="out"/>
+    </method>
+    <!-- Sets one key. An invalid path or value fails with the reason and
+         leaves the file alone. -->
+    <method name="Set">
+      <arg name="path" type="s" direction="in"/>
+      <arg name="value" type="v" direction="in"/>
+    </method>
+    <!-- Removes a key from the file, so its default applies. -->
+    <method name="Reset">
+      <arg name="path" type="s" direction="in"/>
+    </method>
+    <!-- After a write or a reload of a hand edit: the leaf paths whose effective value changed. -->
+    <signal name="Changed">
+      <arg name="paths" type="as"/>
+    </signal>
+  </interface>
 </node>

@@ -72,6 +72,8 @@ sidebar/build/vivus-sidebar &
 cargo run -p vivusctl -- ask "hello"   # shows a placeholder document in the sidebar
 cargo run -p vivusctl -- toggle-listen # talk; live transcript in the sidebar
 cargo run -p vivusctl -- status
+cargo run -p vivusctl -- settings set audio.end_of_turn_silence 0.6   # validated, written, applied
+cargo run -p vivusctl -- settings get audio
 ```
 
 Benchmark STT models on a WAV (16 kHz mono):

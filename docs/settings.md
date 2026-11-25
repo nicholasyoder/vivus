@@ -24,11 +24,16 @@ available in the file.
 
 A new `org.vivus.Settings` interface on `/org/vivus` (contract first, as usual):
 
-- `Get() → s`: the effective config as JSON, with defaults filled in.
+- `Get() → s`: the effective config as JSON, with defaults filled in (unset
+  options are `null`).
 - `Set(s path, v value)`: set one key (e.g. `audio.input`, `roles.stt.model`). It
-  validates before writing, and an invalid value returns a D-Bus error with
-  the reason.
-- `Changed(as paths)`: emitted after any write or reload.
+  validates before writing, and an invalid value returns `InvalidArgs` with
+  the reason (the deserializer's message, e.g. ``unknown field `bogus` ``).
+- `Reset(s path)`: remove a key from the file so its default applies ("Default"
+  in a picker is unset, not a value).
+- `Changed(as paths)`: emitted after any write or reload, with the dotted leaf
+  paths whose effective value changed (diffed from the JSON, so a reload that
+  only touches comments emits nothing).
 - `ListAudioDevices() → a(ssbs)`: id, description, is-default, direction
   (`source` / `sink`). `AudioDevicesChanged` is emitted on hotplug.
 - `ListModels(s role) → a(ss)`: model id, label. For local speech this lists
@@ -36,6 +41,26 @@ A new `org.vivus.Settings` interface on `/org/vivus` (contract first, as usual):
   queries `/models`.
 
 As with `org.vivus.Assistant`, the methods only enqueue engine commands.
+`Set`/`Reset` carry a oneshot reply, so the call returns once the engine has
+accepted or refused the edit. `vivusctl settings get|set|reset` wraps these.
+
+### Writing and reloading
+
+- `Set` re-reads the file, edits that text with `toml_edit` (the old value's
+  trailing comment is kept; missing tables are created), and parses the result
+  as a `Config` before anything is written. If the file already has a syntax
+  error, the edit is refused until it's fixed.
+- Writes go to a temp file beside the real one and rename over it. A symlinked
+  config (dotfiles) is followed, so the link survives.
+- The daemon watches the config's directory (and a symlink target's), since
+  editors save by renaming. Events are settled for 150 ms, then the file is
+  re-read. Text equal to our own last write is ignored. Invalid text is logged
+  and the last good config kept.
+- Applied live: `roles.*` and `providers.*` (the router is rebuilt on the next
+  turn) and `debug.*`. After a restart, for now: `audio.*`, `shortcuts.*`,
+  `roles.stt.*`, `roles.tts.*` and local-speech `models_dir`/`threads`
+  (`settings::needs_restart`). The daemon logs which. The audio-device and
+  settings-page items move audio keys to live.
 
 ## Audio devices
 
