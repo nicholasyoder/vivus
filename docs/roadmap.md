@@ -42,7 +42,7 @@ everyday use work comes first, then smarter answers, then polish.
 ### 1c: Basic desktop control
 
 - [x] App launching: parse `.desktop` files, fuzzy-match the spoken name, launch with an `xdg-activation` token (2026-11-24, `f240169`) — [desktop-control.md](desktop-control.md#app-launching)
-- [x] Windows: list, switch/close/minimize with `wlr-foreign-toplevel-management` (read-only `ext-foreign-toplevel-list-v1` fallback); open windows as router context; prefetch focused titles (2026-11-24, HASH) — [desktop-control.md](desktop-control.md#windows)
+- [x] Windows: list, switch/close/minimize with `wlr-foreign-toplevel-management` (read-only `ext-foreign-toplevel-list-v1` fallback); open windows as router context; prefetch focused titles (2026-11-24, `35d7f01`) — [desktop-control.md](desktop-control.md#windows)
 - [ ] Push-to-talk and toggle-listen through the `GlobalShortcuts` portal (`vivusctl` stays the fallback)
 - [ ] Clipboard read/write via `wlr-data-control`
 
