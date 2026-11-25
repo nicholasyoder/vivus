@@ -55,6 +55,12 @@ vivus-daemon
 vivus-sidebar
 ```
 
+On a dev machine, link the builds instead of installing, so autostart always
+runs the latest one: `scripts/dev-link.sh` (or `--debug`) symlinks the three
+binaries into `~/.local/bin` and the desktop entry into
+`~/.local/share/applications`. Use `cargo build --release` for daily use;
+`vivusctl quit` and start `vivus-daemon` again to pick up a new build.
+
 There's no systemd unit. The daemon logs to stderr (`RUST_LOG=debug` for
 more), so redirect it if your autostart drops output.
 

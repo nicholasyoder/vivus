@@ -56,7 +56,7 @@ crates/
 sidebar/       CMake + Qt6 Widgets project; data/sidebar.qss is the default style
 dbus/          D-Bus interface XML: the contract shared with every UI
 protocol/      custom Wayland protocols (Phase 2)
-scripts/       dev and benchmark helpers (aec-bench, fake-room.sh)
+scripts/       dev-link.sh, dev and benchmark helpers (aec-bench, fake-room.sh)
 docs/          roadmap and design docs
 ```
 
