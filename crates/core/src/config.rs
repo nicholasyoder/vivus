@@ -85,6 +85,8 @@ pub struct Audio {
     /// Other apps' volume while we speak or the user talks, relative to their own (0.3 is about
     /// -10 dB); 1 leaves them alone.
     pub duck_volume: f32,
+    /// Speech playback volume as mixers show it (cubic, like pavucontrol), 0 to 1.
+    pub speech_volume: f32,
     /// Save each utterance as heard (after echo cancellation) with its
     /// transcript, under `~/.local/share/vivus/recordings`.
     pub record_utterances: bool,
@@ -99,6 +101,7 @@ impl Default for Audio {
             echo_cancel: true,
             keep_mic_open: true,
             duck_volume: 0.3,
+            speech_volume: 1.0,
             record_utterances: false,
         }
     }

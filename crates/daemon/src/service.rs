@@ -157,6 +157,19 @@ impl Settings {
         self.shared.lock().unwrap().audio_devices.clone()
     }
 
+    async fn meter_input(&self) -> fdo::Result<()> {
+        self.tx
+            .send(Command::MeterInput)
+            .map_err(|_| fdo::Error::Failed("engine is not running".into()))
+    }
+
+    #[zbus(signal)]
+    pub async fn input_level(
+        emitter: &SignalEmitter<'_>,
+        peak: f64,
+        clipped: bool,
+    ) -> zbus::Result<()>;
+
     #[zbus(signal)]
     pub async fn changed(emitter: &SignalEmitter<'_>, paths: &[String]) -> zbus::Result<()>;
 

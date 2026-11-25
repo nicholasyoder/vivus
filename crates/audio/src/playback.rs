@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 
 use pipewire as pw;
@@ -17,10 +17,14 @@ pub struct PlaybackOptions {
     pub target: Option<String>,
     /// Rate of the samples passed to [`Playback::play`]; PipeWire resamples.
     pub sample_rate: u32,
-    /// Volume of other apps' audio while we play, relative to theirs; `None`
+    /// Volume of other apps' audio while we play, relative to theirs; 1
     /// leaves it alone.
-    pub duck: Option<f32>,
+    pub duck: f32,
+    /// Our stream's volume as mixers show it (cubic), 0 to 1.
+    pub volume: f32,
 }
+
+type OnFinished = Arc<dyn Fn() + Send + Sync>;
 
 enum Control {
     Play(Vec<f32>),
@@ -28,42 +32,49 @@ enum Control {
     Stop,
     Pause(bool),
     UserTalking(bool),
+    SetDuck(f32),
+    SetVolume(f32),
     Quit,
 }
 
-/// Sends audio to a [`Playback`] from any thread.
+/// Sends audio to a [`Playback`] from any thread. Shared, so clones follow
+/// the stream when [`Playback::set_target`] replaces it.
 #[derive(Clone)]
-pub struct PlaybackSender(pw::channel::Sender<Control>);
+pub struct PlaybackSender(Arc<Mutex<pw::channel::Sender<Control>>>);
 
 impl PlaybackSender {
+    fn send(&self, c: Control) {
+        let _ = self.0.lock().unwrap().send(c);
+    }
+
     /// Queue mono samples after whatever is already queued.
     pub fn play(&self, samples: Vec<f32>) {
-        let _ = self.0.send(Control::Play(samples));
+        self.send(Control::Play(samples));
     }
 
     /// Nothing more is coming: call `on_finished` once the queue has played out.
     pub fn end(&self) {
-        let _ = self.0.send(Control::End);
+        self.send(Control::End);
     }
 
     /// Drop queued audio and go quiet now. Cancels a pending `end`.
     pub fn stop(&self) {
-        let _ = self.0.send(Control::Stop);
+        self.send(Control::Stop);
     }
 
     /// Hold the queue and play silence until `resume` (or `stop`).
     pub fn pause(&self) {
-        let _ = self.0.send(Control::Pause(true));
+        self.send(Control::Pause(true));
     }
 
     pub fn resume(&self) {
-        let _ = self.0.send(Control::Pause(false));
+        self.send(Control::Pause(false));
     }
 
     /// Duck other audio while the user talks, whether or not we're playing:
     /// less music in the mic means less for echo cancellation to remove.
     pub fn user_talking(&self, talking: bool) {
-        let _ = self.0.send(Control::UserTalking(talking));
+        self.send(Control::UserTalking(talking));
     }
 }
 
@@ -72,36 +83,75 @@ impl PlaybackSender {
 pub struct Playback {
     tx: PlaybackSender,
     thread: Option<JoinHandle<()>>,
+    opts: PlaybackOptions,
+    on_finished: OnFinished,
 }
 
 impl Playback {
     /// `on_finished` runs on the PipeWire thread after an `end()`ed queue drains.
     pub fn spawn(
         opts: PlaybackOptions,
-        on_finished: impl Fn() + Send + 'static,
+        on_finished: impl Fn() + Send + Sync + 'static,
     ) -> Result<Self, Error> {
-        let (ctl_tx, ctl_rx) = pw::channel::channel::<Control>();
-        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), Error>>();
-
-        let thread = std::thread::Builder::new()
-            .name("vivus-playback".into())
-            .spawn(move || {
-                if let Err(e) = run(opts, on_finished, ctl_rx, &ready_tx) {
-                    let _ = ready_tx.send(Err(e));
-                }
-            })
-            .expect("spawn playback thread");
-
-        ready_rx.recv().map_err(|_| Error::ThreadDied)??;
+        let on_finished: OnFinished = Arc::new(on_finished);
+        let (ctl_tx, thread) = start(opts.clone(), on_finished.clone())?;
         Ok(Self {
-            tx: PlaybackSender(ctl_tx),
+            tx: PlaybackSender(Arc::new(Mutex::new(ctl_tx))),
             thread: Some(thread),
+            opts,
+            on_finished,
         })
     }
 
     pub fn sender(&self) -> PlaybackSender {
         self.tx.clone()
     }
+
+    /// Plays to another sink from now on. The stream is recreated, so what's
+    /// queued is dropped (and `on_finished` never comes for it).
+    pub fn set_target(&mut self, target: Option<String>) -> Result<(), Error> {
+        self.opts.target = target;
+        self.quit();
+        let (ctl_tx, thread) = start(self.opts.clone(), self.on_finished.clone())?;
+        *self.tx.0.lock().unwrap() = ctl_tx;
+        self.thread = Some(thread);
+        Ok(())
+    }
+
+    pub fn set_duck(&mut self, level: f32) {
+        self.opts.duck = level;
+        self.tx.send(Control::SetDuck(level));
+    }
+
+    pub fn set_volume(&mut self, volume: f32) {
+        self.opts.volume = volume;
+        self.tx.send(Control::SetVolume(volume));
+    }
+
+    fn quit(&mut self) {
+        self.tx.send(Control::Quit);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+fn start(
+    opts: PlaybackOptions,
+    on_finished: OnFinished,
+) -> Result<(pw::channel::Sender<Control>, JoinHandle<()>), Error> {
+    let (ctl_tx, ctl_rx) = pw::channel::channel::<Control>();
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<(), Error>>();
+    let thread = std::thread::Builder::new()
+        .name("vivus-playback".into())
+        .spawn(move || {
+            if let Err(e) = run(opts, move || on_finished(), ctl_rx, &ready_tx) {
+                let _ = ready_tx.send(Err(e));
+            }
+        })
+        .expect("spawn playback thread");
+    ready_rx.recv().map_err(|_| Error::ThreadDied)??;
+    Ok((ctl_tx, thread))
 }
 
 impl std::ops::Deref for Playback {
@@ -113,10 +163,7 @@ impl std::ops::Deref for Playback {
 
 impl Drop for Playback {
     fn drop(&mut self) {
-        let _ = self.tx.0.send(Control::Quit);
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
-        }
+        self.quit();
     }
 }
 
@@ -148,20 +195,17 @@ fn run(
     let mainloop = pw::main_loop::MainLoopRc::new(None)?;
     let context = pw::context::ContextRc::new(&mainloop, None)?;
     let core = context.connect_rc(None)?;
-    let ducker = match opts.duck {
-        Some(level) => match crate::duck::Ducker::new(&core, level) {
-            Ok(d) => Some(Rc::new(d)),
-            Err(e) => {
-                tracing::warn!("ducking other audio unavailable: {e}");
-                None
-            }
-        },
-        None => None,
+    let ducker = match crate::duck::Ducker::new(&core, opts.duck) {
+        Ok(d) => Some(Rc::new(d)),
+        Err(e) => {
+            tracing::warn!("ducking other audio unavailable: {e}");
+            None
+        }
     };
     // Ducked while we play or while the user talks.
     let (playing, talking) = (Rc::new(Cell::new(false)), Rc::new(Cell::new(false)));
     let apply = {
-        let (playing, talking) = (playing.clone(), talking.clone());
+        let (playing, talking, ducker) = (playing.clone(), talking.clone(), ducker.clone());
         move || {
             if let Some(d) = &ducker {
                 d.set(playing.get() || talking.get());
@@ -191,6 +235,13 @@ fn run(
 
     let stream = pw::stream::StreamRc::new(core.clone(), "vivus-playback", props)?;
     let state = Rc::new(RefCell::new(State::default()));
+    let volume = Rc::new(Cell::new(opts.volume));
+    let set_volume = |stream: &pw::stream::Stream, v: f32| {
+        let linear = v.clamp(0.0, 1.0).powi(3);
+        if let Err(e) = stream.set_control(spa::sys::SPA_PROP_channelVolumes, &[linear]) {
+            tracing::warn!("playback volume: {e}");
+        }
+    };
     let on_finished = Rc::new(on_finished);
 
     let process_state = state.clone();
@@ -200,7 +251,19 @@ fn run(
     let unduck_frames = opts.sample_rate as usize * UNDUCK_AFTER_SECS;
     let _listener = stream
         .add_local_listener::<()>()
-        .state_changed(|_, _, old, new| tracing::debug!("playback stream: {old:?} -> {new:?}"))
+        .state_changed({
+            let volume = volume.clone();
+            // Each time it starts, so ours wins over a volume restored for the app.
+            move |stream, _, old, new| {
+                tracing::debug!("playback stream: {old:?} -> {new:?}");
+                if matches!(
+                    new,
+                    pw::stream::StreamState::Paused | pw::stream::StreamState::Streaming
+                ) {
+                    set_volume(stream, volume.get());
+                }
+            }
+        })
         .process(move |stream, _| {
             let mut st = process_state.borrow_mut();
             if st.draining {
@@ -331,6 +394,15 @@ fn run(
             Control::UserTalking(on) => {
                 talking.set(on);
                 apply();
+            }
+            Control::SetDuck(level) => {
+                if let Some(d) = &ducker {
+                    d.set_level(level);
+                }
+            }
+            Control::SetVolume(v) => {
+                volume.set(v);
+                set_volume(&ctl_stream, v);
             }
             Control::Stop => {
                 st.queue.clear();

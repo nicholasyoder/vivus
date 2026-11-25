@@ -91,5 +91,15 @@
       <arg name="devices" type="a(ssbs)"/>
       <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="AudioDeviceList"/>
     </signal>
+
+    <!-- Sends InputLevel for the next 5 s, keeping the mic open meanwhile;
+         call again to extend (a settings page calls it every couple of seconds). -->
+    <method name="MeterInput"/>
+    <!-- About 20 times a second while metering: the peak of what STT hears
+         (after echo cancellation), 0 to 1 linear, and whether it hit full scale. -->
+    <signal name="InputLevel">
+      <arg name="peak" type="d"/>
+      <arg name="clipped" type="b"/>
+    </signal>
   </interface>
 </node>

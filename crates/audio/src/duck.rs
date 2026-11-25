@@ -29,24 +29,27 @@ type Streams = Rc<RefCell<HashMap<u32, Stream>>>;
 pub(crate) struct Ducker {
     streams: Streams,
     ducked: Rc<Cell<bool>>,
-    level: f32,
+    /// Ducking wanted (we're speaking or the user talks), whatever the level.
+    wanted: Cell<bool>,
+    level: Rc<Cell<f32>>,
     _registry: RegistryRc,
     _listener: pw::registry::Listener,
 }
 
 impl Ducker {
     /// Tracks every audio output stream except our own (`vivus-*` nodes). `level`
-    /// is their volume while ducked, relative to what the user set.
+    /// is their volume while ducked, relative to what the user set; 1 is off.
     pub fn new(core: &pw::core::CoreRc, level: f32) -> Result<Self, pw::Error> {
         let registry = core.get_registry_rc()?;
         let streams: Streams = Rc::default();
         let ducked = Rc::new(Cell::new(false));
+        let level = Rc::new(Cell::new(level));
 
         let listener = registry
             .add_listener_local()
             .global({
                 let registry = registry.downgrade();
-                let (streams, ducked) = (streams.clone(), ducked.clone());
+                let (streams, ducked, level) = (streams.clone(), ducked.clone(), level.clone());
                 move |global| {
                     let Some(props) = global.props else { return };
                     if global.type_ != ObjectType::Node
@@ -67,10 +70,11 @@ impl Ducker {
                     let listener = node
                         .add_listener_local()
                         .param({
-                            let (streams, ducked) = (streams.clone(), ducked.clone());
+                            let (streams, ducked, level) =
+                                (streams.clone(), ducked.clone(), level.clone());
                             move |_, _, _, _, pod| {
                                 if let Some(pod) = pod {
-                                    on_props(&streams, id, pod, ducked.get(), level);
+                                    on_props(&streams, id, pod, ducked.get(), level.get());
                                 }
                             }
                         })
@@ -98,26 +102,39 @@ impl Ducker {
         Ok(Self {
             streams,
             ducked,
+            wanted: Cell::new(false),
             level,
             _registry: registry,
             _listener: listener,
         })
     }
 
-    pub fn set(&self, ducked: bool) {
+    pub fn set(&self, wanted: bool) {
+        self.wanted.set(wanted);
+        let ducked = wanted && self.level.get() < 1.0;
         if self.ducked.replace(ducked) == ducked {
             return;
         }
         tracing::debug!("duck: {ducked} ({} streams)", self.streams.borrow().len());
         for stream in self.streams.borrow_mut().values_mut() {
             match (ducked, &stream.soft) {
-                (true, Some(soft)) => duck(stream, soft.clone(), self.level),
+                (true, Some(soft)) => duck(stream, soft.clone(), self.level.get()),
                 (false, Some(soft)) if stream.ducked_to.take().is_some() => {
                     set_soft_volumes(&stream.node, soft.clone());
                 }
                 _ => {}
             }
         }
+    }
+}
+
+impl Ducker {
+    /// A new level applies at once if we're ducked now.
+    pub fn set_level(&self, level: f32) {
+        let wanted = self.wanted.get();
+        self.set(false);
+        self.level.set(level);
+        self.set(wanted);
     }
 }
 

@@ -11,6 +11,7 @@ vivus-dbus.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true
+futures-util.workspace = true
 zbus.workspace = true
 reqwest.workspace = true
 bzip2 = "0.6"

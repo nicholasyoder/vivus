@@ -1,9 +1,9 @@
 # Settings
 
-The sidebar gets a settings page so common choices don't need a text editor.
-`~/.config/vivus/config.toml` stays the single source of truth: the sidebar
-edits it through the daemon, and anything the page can't edit is still
-available in the file.
+The sidebar app has a settings window so common choices don't need a text
+editor. `~/.config/vivus/config.toml` stays the single source of truth: the
+window edits it through the daemon, and anything it can't edit is still
+available in the file ("Open config file").
 
 ## Principles
 
@@ -34,6 +34,8 @@ A new `org.vivus.Settings` interface on `/org/vivus` (contract first, as usual):
 - `Changed(as paths)`: emitted after any write or reload, with the dotted leaf
   paths whose effective value changed (diffed from the JSON, so a reload that
   only touches comments emits nothing).
+- `MeterInput()`: send `InputLevel(d peak, b clipped)` about 20 times a second
+  for the next 5 s, keeping the mic open meanwhile (see [Level meter](#level-meter)).
 - `ListAudioDevices() → a(ssbs)`: id, description, is-default, direction
   (`source` / `sink`). `AudioDevicesChanged` is emitted on hotplug.
 - `ListModels(s role) → a(ss)`: model id, label. For local speech this lists
@@ -57,12 +59,13 @@ accepted or refused the edit. `vivusctl settings get|set|reset` wraps these.
   re-read. Text equal to our own last write is ignored. Invalid text is logged
   and the last good config kept.
 - Applied live: `roles.*` and `providers.*` (the router is rebuilt on the next
-  turn), `debug.*`, and the mic settings `audio.input`, `audio.echo_cancel`,
-  `audio.keep_mic_open` (see [Audio devices](#audio-devices)). After a
-  restart, for now: the other `audio.*` keys, `shortcuts.*`, `roles.stt.*`,
-  `roles.tts.*` and local-speech `models_dir`/`threads`
-  (`settings::needs_restart`). The daemon logs which. The settings-page item
-  moves the rest of `audio.*` to live.
+  turn), `debug.*`, the mic settings `audio.input`, `audio.echo_cancel`,
+  `audio.keep_mic_open` (see [Audio devices](#audio-devices)), and
+  `audio.output`, `audio.end_of_turn_silence` (the VAD is recreated, dropping
+  an utterance in progress), `audio.speech_volume`, `audio.duck_volume`.
+  After a restart, for now: `audio.record_utterances`, `shortcuts.*`,
+  `roles.stt.*`, `roles.tts.*` and local-speech `models_dir`/`threads`
+  (`settings::needs_restart`). The daemon logs which.
 
 ## Audio devices
 
@@ -78,6 +81,11 @@ nodes (`vivus-*`) are left out. `vivusctl settings devices` prints the list.
 Choosing a device sets `audio.input` / `audio.output` to the node name. "Default"
 means unset, which follows the system default.
 
+**Live output switching.** A change to `audio.output` recreates the playback
+stream on the new sink (its `PlaybackSender` is shared, so the TTS thread's
+clone follows). A reply being spoken is cancelled first, since the new stream
+won't report the old one finishing.
+
 **Live input switching.** A change to `audio.input`, `audio.echo_cancel`,
 `audio.keep_mic_open` or `audio.output` (the canceller's reference) reopens the
 mic: the old stream and its echo-cancel module are dropped first (node names
@@ -89,10 +97,41 @@ to the default source. When it shows up again in the device list, the daemon
 reopens the mic so it goes back to the chosen device (checked with a lingering
 `support.null-audio-sink` node created and destroyed via `pw-cli`).
 
-Still to come with the settings page: speech volume sets the playback stream's
-volume (what a mixer shows, so the two agree); `duck_volume` is how far other
-apps go down while speaking. A level meter next to the input picker shows
-whether the mic is actually working.
+**Speech volume.** `audio.speech_volume` (0 to 1, default 1) is set as the
+playback stream's `channelVolumes`, cubed, so a mixer shows the same
+percentage. It's re-applied each time the stream starts, so it wins over a
+volume WirePlumber restored for the app; changing the app's volume in a mixer
+lasts until the next reply. `audio.duck_volume` changes apply at once, even
+mid-duck.
+
+## Level meter
+
+The meter shows what STT hears: the capture stream after echo cancellation,
+not the raw mic. Capture computes the peak of each 50 ms block on its own
+thread while metering is on, and the engine turns each into an `InputLevel`
+signal. Metering is a lease, not on/off: each `MeterInput` call extends it to
+5 s from now, so a client that crashes or forgets can't leave the mic open
+and the bus busy. The settings window calls it every 2 s while shown.
+`clipped` means a sample reached 0.99; the window holds its CLIP light for
+1.5 s. Metering holds the stream open like listening does (relevant only
+with `keep_mic_open = false`).
+
+## Settings window
+
+A normal toplevel window, not a page inside the sidebar: the sidebar is a
+narrow layer-shell panel meant for answers, a form wants more room, and the
+window should stay open while you talk to test a change. It opens from the
+sidebar's Settings button or `vivus-sidebar --settings`, and closing it
+doesn't quit the app. It shares the sidebar's process and QSS (`#VivusSettings`
+and the object names listed in `sidebar.qss`).
+
+- Device pickers: "System default (…)" is the unset value (`Reset`); a
+  configured device that's unplugged stays listed as "(not connected)".
+- Sliders and the silence spin box write after a 250 ms pause, so dragging
+  doesn't rewrite the file on every step but you still hear the change.
+- Every `Changed` re-reads `Get`, so hand edits show up while it's open. A
+  refused `Set` shows the daemon's reason and puts the control back.
+- Disabled, with a note, while the daemon isn't running.
 
 **Sidebar types.** `a(ssbs)` needs a Qt type name for `qdbusxml2cpp`, so the
 XML annotates it as `AudioDeviceList`, declared in `sidebar/src/dbustypes.h`

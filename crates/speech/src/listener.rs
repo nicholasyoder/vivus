@@ -59,6 +59,29 @@ pub enum Mode {
     Hold,
 }
 
+fn create_vad(
+    model: &Path,
+    opts: &VadOptions,
+    min_speech: f32,
+    min_silence: f32,
+) -> Result<VoiceActivityDetector, Error> {
+    let config = VadModelConfig {
+        silero_vad: SileroVadModelConfig {
+            model: Some(model.to_string_lossy().into_owned()),
+            threshold: opts.threshold,
+            min_silence_duration: min_silence,
+            min_speech_duration: min_speech,
+            window_size: VAD_WINDOW as i32,
+            max_speech_duration: opts.max_speech,
+        },
+        sample_rate: SAMPLE_RATE,
+        num_threads: 1,
+        ..Default::default()
+    };
+    VoiceActivityDetector::create(&config, opts.max_speech + 5.0)
+        .ok_or_else(|| Error::LoadFailed(VAD_MODEL.into()))
+}
+
 pub struct Listener {
     vad: VoiceActivityDetector,
     /// Same model with a shorter `min_speech`, for `SpeechPossible`.
@@ -77,6 +100,8 @@ pub struct Listener {
     recorder: Option<Recorder>,
     /// What the recognizer got this utterance, kept only while recording.
     heard: Vec<f32>,
+    model: std::path::PathBuf,
+    opts: VadOptions,
 }
 
 impl Listener {
@@ -89,26 +114,9 @@ impl Listener {
         if !model.exists() {
             return Err(Error::MissingFiles(model));
         }
-        let create = |threshold, min_speech, min_silence| {
-            let config = VadModelConfig {
-                silero_vad: SileroVadModelConfig {
-                    model: Some(model.to_string_lossy().into_owned()),
-                    threshold,
-                    min_silence_duration: min_silence,
-                    min_speech_duration: min_speech,
-                    window_size: VAD_WINDOW as i32,
-                    max_speech_duration: opts.max_speech,
-                },
-                sample_rate: SAMPLE_RATE,
-                num_threads: 1,
-                ..Default::default()
-            };
-            VoiceActivityDetector::create(&config, opts.max_speech + 5.0)
-                .ok_or_else(|| Error::LoadFailed(VAD_MODEL.into()))
-        };
         Ok(Self {
-            vad: create(opts.threshold, opts.min_speech, opts.min_silence)?,
-            quick_vad: create(opts.threshold, opts.min_speech_possible, POSSIBLE_SILENCE)?,
+            vad: create_vad(&model, opts, opts.min_speech, opts.min_silence)?,
+            quick_vad: create_vad(&model, opts, opts.min_speech_possible, POSSIBLE_SILENCE)?,
             possible: false,
             burst: Vec::new(),
             stt,
@@ -119,7 +127,17 @@ impl Listener {
             in_utterance: false,
             recorder: None,
             heard: Vec::new(),
+            model,
+            opts: opts.clone(),
         })
+    }
+
+    /// Silence that ends an utterance. Drops any utterance in progress.
+    pub fn set_min_silence(&mut self, seconds: f32) -> Result<(), Error> {
+        self.vad = create_vad(&self.model, &self.opts, self.opts.min_speech, seconds)?;
+        self.opts.min_silence = seconds;
+        self.reset();
+        Ok(())
     }
 
     /// Save every utterance with its transcript (`None` stops).

@@ -51,7 +51,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] Install and autostart (no systemd unit); `.desktop` entry `org.vivus.Vivus` (portal and sidebar app ID); `vivusctl models list|fetch` replaces `scripts/fetch-models.sh` (2026-11-24, `cd69692`) — [README](../README.md#install)
 - [x] `org.vivus.Settings` D-Bus interface (`Get`/`Set`/`Reset`/`Changed`); daemon writes config with `toml_edit`, watches the file and reloads live; `vivusctl settings` (2026-11-24, `5a7ea5c`) — [settings.md](settings.md#d-bus)
 - [x] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon (2026-11-24, `fe8d56c`) — [settings.md](settings.md#audio-devices)
-- [ ] Sidebar settings page: input/output device pickers, mic level meter with a clip indicator, end-of-turn silence, speech volume, duck volume — [settings.md](settings.md)
+- [x] Settings window (its own toplevel): input/output device pickers, mic level meter with a clip indicator, end-of-turn silence, speech volume, duck volume; all applied live (2026-11-24, `HASH`) — [settings.md](settings.md#settings-window)
 - [ ] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice — [settings.md](settings.md#roles-and-providers)
 
 ### 1e: Smarter answers
@@ -119,6 +119,7 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 ## Decided
 
+- Settings get their own normal window, not a page in the layer-shell sidebar (2026-11-24).
 - No systemd user unit: the daemon and sidebar start from the session's autostart, which fits any desktop (2026-11-24).
 - Phase 1 is split into need-ordered sub-phases instead of categories; speech quality comes next, smarter answers (memory, context, web, long escalations) after basic desktop control and setup (2026-11-24).
 - The router's spoken reply is its streamed text content, not a `speak` tool: providers send tool arguments in one final chunk (2026-11-23).

@@ -29,6 +29,11 @@ pub struct EchoCancelOptions {
     pub reference: Option<String>,
 }
 
+/// Samples per level report: 50 ms.
+const LEVEL_WINDOW: usize = SAMPLE_RATE as usize / 20;
+/// A sample at or above this counts as clipped.
+const CLIP: f32 = 0.99;
+
 /// Name of the echo-cancelled source node while it exists.
 pub const ECHO_CANCEL_SOURCE: &str = "vivus-echo-cancel-source";
 
@@ -43,6 +48,8 @@ pub struct Capture {
     ctl: pw::channel::Sender<Control>,
     /// With `keep_open`, inactive means this is false and frames are dropped.
     listening: Arc<AtomicBool>,
+    /// Level reports wanted; holds the stream open like `listening`.
+    metering: Arc<AtomicBool>,
     keep_open: bool,
     thread: Option<JoinHandle<()>>,
     echo_cancelled: bool,
@@ -50,17 +57,33 @@ pub struct Capture {
 
 impl Capture {
     /// `on_frames` gets each captured buffer as 16 kHz mono samples, on the
-    /// capture thread; keep it cheap (e.g. send to a channel).
+    /// capture thread; keep it cheap (e.g. send to a channel). While metering,
+    /// `on_level` gets the peak and whether it clipped, every 50 ms.
     pub fn spawn(
         opts: CaptureOptions,
         on_frames: impl Fn(Vec<f32>) + Send + 'static,
+        on_level: impl Fn(f32, bool) + Send + 'static,
     ) -> Result<Self, Error> {
         let (ctl_tx, ctl_rx) = pw::channel::channel::<Control>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<bool, Error>>();
         let keep_open = opts.keep_open;
         let listening = Arc::new(AtomicBool::new(false));
-        let gate = listening.clone();
-        let on_frames = move |samples| {
+        let metering = Arc::new(AtomicBool::new(false));
+        let (gate, meter_gate) = (listening.clone(), metering.clone());
+        let mut meter = (0.0f32, false, 0usize); // peak, clipped, samples
+        let on_frames = move |samples: Vec<f32>| {
+            if meter_gate.load(Ordering::Relaxed) {
+                for &x in &samples {
+                    let a = x.abs();
+                    meter.0 = meter.0.max(a);
+                    meter.1 |= a >= CLIP;
+                    meter.2 += 1;
+                    if meter.2 >= LEVEL_WINDOW {
+                        on_level(meter.0, meter.1);
+                        meter = (0.0, false, 0);
+                    }
+                }
+            }
             if gate.load(Ordering::Relaxed) {
                 on_frames(samples);
             }
@@ -79,6 +102,7 @@ impl Capture {
         Ok(Self {
             ctl: ctl_tx,
             listening,
+            metering,
             keep_open,
             thread: Some(thread),
             echo_cancelled,
@@ -92,8 +116,20 @@ impl Capture {
 
     pub fn set_active(&self, active: bool) {
         self.listening.store(active, Ordering::Relaxed);
+        self.update_stream();
+    }
+
+    /// Report levels (see `spawn`); the mic stays open while on.
+    pub fn set_metering(&self, on: bool) {
+        self.metering.store(on, Ordering::Relaxed);
+        self.update_stream();
+    }
+
+    fn update_stream(&self) {
         if !self.keep_open {
-            let _ = self.ctl.send(Control::SetActive(active));
+            let open =
+                self.listening.load(Ordering::Relaxed) || self.metering.load(Ordering::Relaxed);
+            let _ = self.ctl.send(Control::SetActive(open));
         }
     }
 }
@@ -109,7 +145,7 @@ impl Drop for Capture {
 
 fn run(
     opts: CaptureOptions,
-    on_frames: impl Fn(Vec<f32>) + 'static,
+    mut on_frames: impl FnMut(Vec<f32>) + 'static,
     ctl_rx: pw::channel::Receiver<Control>,
     ready: &mpsc::Sender<Result<bool, Error>>,
 ) -> Result<(), Error> {

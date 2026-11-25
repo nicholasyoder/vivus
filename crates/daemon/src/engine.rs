@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 
@@ -70,7 +71,18 @@ pub enum Command {
     ConfigFileChanged,
     /// Audio sources and sinks, after hotplug or a default change.
     AudioDevices(Vec<vivus_audio::Device>),
+    /// `org.vivus.Settings.MeterInput`: send levels for the next while.
+    MeterInput,
+    /// A metering lease may have run out.
+    MeterCheck,
+    InputLevel {
+        peak: f32,
+        clipped: bool,
+    },
 }
+
+/// How long one `MeterInput` call keeps levels coming.
+const METER_LEASE: Duration = Duration::from_secs(5);
 
 /// The reply in progress.
 struct Reply {
@@ -101,6 +113,8 @@ pub struct Engine {
     windows: Option<SharedWindows>,
     clipboard: Option<SharedClipboard>,
     audio_devices: Vec<vivus_audio::Device>,
+    /// Metering until then.
+    meter_until: Option<Instant>,
 }
 
 impl Engine {
@@ -129,6 +143,7 @@ impl Engine {
             windows,
             clipboard,
             audio_devices: Vec::new(),
+            meter_until: None,
         }
     }
 
@@ -137,6 +152,9 @@ impl Engine {
             let chatty = matches!(
                 cmd,
                 Command::Speech(Event::Partial(_))
+                    | Command::InputLevel { .. }
+                    | Command::MeterInput
+                    | Command::MeterCheck
                     | Command::Reply {
                         event: ReplyEvent::Text(_),
                         ..
@@ -160,8 +178,9 @@ impl Engine {
     async fn handle(&mut self, cmd: Command) -> zbus::Result<()> {
         match cmd {
             Command::VoiceReady(voice) => match *voice {
-                Ok(v) => {
+                Ok(mut v) => {
                     tracing::info!("voice ready");
+                    v.set_metering(self.meter_until.is_some());
                     self.voice = Some(v);
                 }
                 Err(e) => tracing::error!("voice unavailable: {e:#}"),
@@ -220,6 +239,41 @@ impl Engine {
             }
             Command::ConfigFileChanged => self.reload_config().await?,
             Command::AudioDevices(list) => self.on_audio_devices(list).await?,
+            Command::MeterInput => {
+                if self.meter_until.is_none() {
+                    tracing::debug!("metering input");
+                    if let Some(v) = &mut self.voice {
+                        v.set_metering(true);
+                    }
+                    self.schedule_meter_check(METER_LEASE);
+                }
+                self.meter_until = Some(Instant::now() + METER_LEASE);
+            }
+            Command::MeterCheck => {
+                if let Some(until) = self.meter_until {
+                    let now = Instant::now();
+                    if now >= until {
+                        tracing::debug!("metering stopped");
+                        self.meter_until = None;
+                        if let Some(v) = &mut self.voice {
+                            v.set_metering(false);
+                        }
+                    } else {
+                        self.schedule_meter_check(until - now);
+                    }
+                }
+            }
+            Command::InputLevel { peak, clipped } => {
+                if self.meter_until.is_some() {
+                    let iface = self
+                        .conn
+                        .object_server()
+                        .interface::<_, service::Settings>(vivus_dbus::PATH)
+                        .await?;
+                    service::Settings::input_level(iface.signal_emitter(), peak.into(), clipped)
+                        .await?;
+                }
+            }
             Command::Reply { generation, event } => {
                 if self
                     .reply
@@ -231,6 +285,14 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    fn schedule_meter_check(&self, after: Duration) {
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(after).await;
+            let _ = tx.send(Command::MeterCheck);
+        });
     }
 
     async fn start_listening(&mut self, mode: Mode) -> zbus::Result<()> {
@@ -421,10 +483,37 @@ impl Engine {
         }
         self.shared.lock().unwrap().config_json = config.to_json();
         self.config = config;
+        let changed = |key: &str| paths.iter().any(|p| p == key);
         if paths.iter().any(|p| settings::reopens_mic(p))
             && let Some(v) = &mut self.voice
         {
             v.reconnect(&self.config.audio);
+        }
+        if changed("audio.end_of_turn_silence")
+            && let Some(v) = &self.voice
+        {
+            v.set_end_of_turn_silence(self.config.audio.end_of_turn_silence);
+        }
+        if let Some(s) = &mut self.speaker {
+            let audio = &self.config.audio;
+            if changed("audio.duck_volume") {
+                s.set_duck_volume(audio.duck_volume);
+            }
+            if changed("audio.speech_volume") {
+                s.set_volume(audio.speech_volume);
+            }
+        }
+        if changed("audio.output") && self.speaker.is_some() {
+            // The new stream won't report the old reply finishing.
+            let speaking = self.state() == AssistantState::Speaking;
+            if speaking {
+                self.cancel_reply();
+            }
+            let output = self.config.audio.output.clone();
+            self.speaker.as_mut().unwrap().set_output(output);
+            if speaking {
+                self.after_reply().await?;
+            }
         }
         let iface = self
             .conn
@@ -546,13 +635,13 @@ impl Engine {
         }
     }
 
-    /// Drops the reply in progress: the LLM request closes and TTS goes quiet.
     fn user_talking(&self, talking: bool) {
         if let Some(s) = &self.speaker {
             s.user_talking(talking);
         }
     }
 
+    /// Drops the reply in progress: the LLM request closes and TTS goes quiet.
     fn cancel_reply(&mut self) {
         if let Some(task) = self.reply.take().and_then(|r| r.task) {
             task.abort();

@@ -19,6 +19,7 @@ enum Msg {
     Start(Mode),
     Finish,
     Stop,
+    EndOfTurnSilence(f32),
 }
 
 pub struct Voice {
@@ -27,6 +28,8 @@ pub struct Voice {
     capture: Option<Capture>,
     /// Whether the mic should be delivering audio, to restore after a reconnect.
     active: bool,
+    metering: bool,
+    events: UnboundedSender<Command>,
 }
 
 impl std::fmt::Debug for Voice {
@@ -70,12 +73,14 @@ impl Voice {
             listener.set_recorder(Some(recorder));
         }
 
+        let events_for_levels = events.clone();
         let (tx, rx) = mpsc::channel::<Msg>();
         std::thread::Builder::new()
             .name("vivus-speech".into())
             .spawn(move || {
+                let speech_events = events.clone();
                 let mut emit = |e| {
-                    let _ = events.send(Command::Speech(e));
+                    let _ = speech_events.send(Command::Speech(e));
                 };
                 let mut active = false;
                 for msg in rx {
@@ -94,16 +99,23 @@ impl Voice {
                             listener.reset();
                             active = false;
                         }
+                        Msg::EndOfTurnSilence(s) => {
+                            if let Err(e) = listener.set_min_silence(s) {
+                                tracing::error!("setting end-of-turn silence: {e}");
+                            }
+                        }
                     }
                 }
             })
             .context("spawning speech thread")?;
 
-        let capture = spawn_capture(&config.audio, tx.clone())?;
+        let capture = spawn_capture(&config.audio, tx.clone(), events_for_levels.clone())?;
         Ok(Self {
             tx,
             capture: Some(capture),
             active: false,
+            metering: false,
+            events: events_for_levels,
         })
     }
 
@@ -111,9 +123,10 @@ impl Voice {
     /// The old stream (and its echo canceller) goes first, since node names clash.
     pub fn reconnect(&mut self, audio: &Audio) {
         self.capture = None;
-        match spawn_capture(audio, self.tx.clone()) {
+        match spawn_capture(audio, self.tx.clone(), self.events.clone()) {
             Ok(c) => {
                 c.set_active(self.active);
+                c.set_metering(self.metering);
                 self.capture = Some(c);
                 tracing::info!("mic reopened");
             }
@@ -126,6 +139,19 @@ impl Voice {
         if let Some(c) = &self.capture {
             c.set_active(active);
         }
+    }
+
+    /// `Command::InputLevel` reports while on; the mic stays open.
+    pub fn set_metering(&mut self, on: bool) {
+        self.metering = on;
+        if let Some(c) = &self.capture {
+            c.set_metering(on);
+        }
+    }
+
+    /// Drops an utterance in progress.
+    pub fn set_end_of_turn_silence(&self, seconds: f32) {
+        let _ = self.tx.send(Msg::EndOfTurnSilence(seconds));
     }
 
     pub fn start(&mut self, mode: Mode) {
@@ -151,7 +177,11 @@ impl Voice {
     }
 }
 
-fn spawn_capture(audio: &Audio, tx: mpsc::Sender<Msg>) -> Result<Capture, vivus_audio::Error> {
+fn spawn_capture(
+    audio: &Audio,
+    tx: mpsc::Sender<Msg>,
+    events: UnboundedSender<Command>,
+) -> Result<Capture, vivus_audio::Error> {
     Capture::spawn(
         CaptureOptions {
             target: audio.input.clone(),
@@ -162,6 +192,9 @@ fn spawn_capture(audio: &Audio, tx: mpsc::Sender<Msg>) -> Result<Capture, vivus_
         },
         move |samples| {
             let _ = tx.send(Msg::Audio(samples));
+        },
+        move |peak, clipped| {
+            let _ = events.send(Command::InputLevel { peak, clipped });
         },
     )
 }

@@ -77,6 +77,9 @@ keep_mic_open = true
 # relative to their own; 1.0 leaves them alone. Your mixer's volumes for them
 # are left untouched.
 duck_volume = 0.3
+# Our speech volume as a mixer shows it (0 to 1); speech is levelled to about
+# -16 LUFS first. Setting the app's volume in a mixer doesn't change this.
+speech_volume = 1.0
 # Save each utterance as the recognizer heard it (after echo cancellation) to
 # ~/.local/share/vivus/recordings, with transcripts.tsv. For debugging accuracy.
 record_utterances = false

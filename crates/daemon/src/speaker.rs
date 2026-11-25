@@ -87,7 +87,8 @@ impl Speaker {
             PlaybackOptions {
                 target: config.audio.output.clone(),
                 sample_rate: synth.sample_rate(),
-                duck: (config.audio.duck_volume < 1.0).then_some(config.audio.duck_volume.max(0.0)),
+                duck: config.audio.duck_volume.clamp(0.0, 1.0),
+                volume: config.audio.speech_volume,
             },
             move || {
                 let _ = events.send(Command::SpeakingFinished);
@@ -154,6 +155,22 @@ impl Speaker {
 
     pub fn resume(&self) {
         self.playback.resume();
+    }
+
+    /// Plays to another sink; drops what's queued.
+    pub fn set_output(&mut self, sink: Option<String>) {
+        self.stop();
+        if let Err(e) = self.playback.set_target(sink) {
+            tracing::error!("switching speech output: {e}");
+        }
+    }
+
+    pub fn set_duck_volume(&mut self, level: f32) {
+        self.playback.set_duck(level.clamp(0.0, 1.0));
+    }
+
+    pub fn set_volume(&mut self, volume: f32) {
+        self.playback.set_volume(volume);
     }
 
     /// Duck other apps while the user talks (helps echo cancellation).

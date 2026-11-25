@@ -2723,6 +2723,7 @@ dependencies = [
  "anyhow",
  "bzip2 0.6.1",
  "clap",
+ "futures-util",
  "reqwest",
  "serde_json",
  "tar",

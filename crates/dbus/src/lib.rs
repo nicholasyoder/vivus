@@ -61,4 +61,8 @@ pub trait Settings {
     fn changed(&self, paths: Vec<String>) -> zbus::Result<()>;
     #[zbus(signal)]
     fn audio_devices_changed(&self, devices: Vec<AudioDevice>) -> zbus::Result<()>;
+
+    fn meter_input(&self) -> zbus::Result<()>;
+    #[zbus(signal)]
+    fn input_level(&self, peak: f64, clipped: bool) -> zbus::Result<()>;
 }

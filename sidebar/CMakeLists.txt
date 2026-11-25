@@ -16,6 +16,8 @@ qt_add_executable(vivus-sidebar
     src/dbustypes.h src/dbustypes.cpp
     src/daemonclient.h src/daemonclient.cpp
     src/sidebarwindow.h src/sidebarwindow.cpp
+    src/settingsclient.h src/settingsclient.cpp
+    src/settingswindow.h src/settingswindow.cpp
     ${DBUS_SRCS}
 )
 

@@ -25,6 +25,7 @@ fn main() {
         move |s| {
             let _ = tx.send(s);
         },
+        |_, _| {},
     )
     .expect("capture");
     println!("echo cancelled: {}", cap.echo_cancelled());

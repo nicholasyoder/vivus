@@ -20,6 +20,9 @@ public:
     // Must run before the first show().
     void setupLayerShell();
 
+signals:
+    void settingsRequested();
+
 private:
     void updateState();
     void updateDocuments();
@@ -35,5 +38,6 @@ private:
     QLabel *m_transcript;
     QLineEdit *m_input;
     QPushButton *m_talk;
+    QPushButton *m_settings;
     QPushButton *m_quit;
 };

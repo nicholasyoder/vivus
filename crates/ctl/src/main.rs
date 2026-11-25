@@ -68,6 +68,8 @@ enum SettingsCmd {
     Reset { path: String },
     /// List audio inputs and outputs: the names `audio.input` / `audio.output` take.
     Devices,
+    /// Show the mic level (what speech recognition hears) until Ctrl+C.
+    Meter,
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -151,6 +153,24 @@ async fn settings(conn: &zbus::Connection, action: SettingsCmd) -> anyhow::Resul
             for (name, description, is_default, direction) in devices {
                 let mark = if is_default { "*" } else { " " };
                 println!("{direction:<6} {mark} {name}\n           {description}");
+            }
+        }
+        SettingsCmd::Meter => {
+            use futures_util::StreamExt;
+            let mut levels = proxy.receive_input_level().await?;
+            let mut lease = tokio::time::interval(std::time::Duration::from_secs(2));
+            loop {
+                tokio::select! {
+                    _ = lease.tick() => proxy.meter_input().await
+                        .context("talking to vivus-daemon (is it running?)")?,
+                    Some(sig) = levels.next() => {
+                        let args = sig.args()?;
+                        let db = 20.0 * args.peak.max(1e-6).log10();
+                        let bar = "#".repeat(((db + 60.0).max(0.0) / 60.0 * 50.0) as usize);
+                        let clip = if args.clipped { " CLIP" } else { "" };
+                        println!("{db:6.1} dBFS {bar:<50}{clip}");
+                    }
+                }
             }
         }
     }

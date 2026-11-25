@@ -75,6 +75,7 @@ cargo run -p vivusctl -- status
 cargo run -p vivusctl -- settings set audio.end_of_turn_silence 0.6   # validated, written, applied
 cargo run -p vivusctl -- settings get audio
 cargo run -p vivusctl -- settings devices   # names for audio.input / audio.output
+cargo run -p vivusctl -- settings meter     # mic level, as speech recognition hears it
 ```
 
 Benchmark STT models on a WAV (16 kHz mono):

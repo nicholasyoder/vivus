@@ -1,5 +1,7 @@
 #include "daemonclient.h"
 #include "dbustypes.h"
+#include "settingsclient.h"
+#include "settingswindow.h"
 #include "sidebarwindow.h"
 
 #include <QApplication>
@@ -35,7 +37,8 @@ int main(int argc, char *argv[])
     const QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("Show the sidebar at startup."));
     const QCommandLineOption noStyleOpt(QStringLiteral("no-style"),
                                         QStringLiteral("Don't apply vivus' stylesheet (use the host theme)."));
-    parser.addOptions({showOpt, noStyleOpt});
+    const QCommandLineOption settingsOpt(QStringLiteral("settings"), QStringLiteral("Open the settings window."));
+    parser.addOptions({showOpt, noStyleOpt, settingsOpt});
     parser.process(app);
 
     if (!parser.isSet(noStyleOpt))
@@ -46,6 +49,16 @@ int main(int argc, char *argv[])
     window.setupLayerShell();
     if (parser.isSet(showOpt))
         window.show();
+
+    SettingsClient settingsClient;
+    SettingsWindow settings(&client, &settingsClient);
+    QObject::connect(&window, &SidebarWindow::settingsRequested, &settings, [&settings] {
+        settings.show();
+        settings.raise();
+        settings.activateWindow();
+    });
+    if (parser.isSet(settingsOpt))
+        settings.show();
 
     return app.exec();
 }
