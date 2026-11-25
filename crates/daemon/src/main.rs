@@ -1,4 +1,5 @@
 mod apps;
+mod choices;
 mod clipboard;
 mod engine;
 mod pronounce;
@@ -74,14 +75,14 @@ async fn main() -> anyhow::Result<()> {
     let voice_tx = tx.clone();
     tokio::task::spawn_blocking(move || {
         let voice = voice::Voice::new(&voice_config, voice_tx.clone());
-        let _ = voice_tx.send(Command::VoiceReady(Box::new(voice)));
+        let _ = voice_tx.send(Command::VoiceReady(0, Box::new(voice)));
     });
     let speaker_config = config.clone();
     let speaker_tx = tx.clone();
     let rt = tokio::runtime::Handle::current();
     tokio::task::spawn_blocking(move || {
         let speaker = speaker::Speaker::new(&speaker_config, speaker_tx.clone(), &rt);
-        let _ = speaker_tx.send(Command::SpeakerReady(Box::new(speaker)));
+        let _ = speaker_tx.send(Command::SpeakerReady(0, Box::new(speaker)));
     });
 
     let focus_tx = tx.clone();

@@ -18,8 +18,26 @@ const QDBusArgument &operator>>(const QDBusArgument &arg, AudioDevice &d)
     return arg;
 }
 
+QDBusArgument &operator<<(QDBusArgument &arg, const Choice &c)
+{
+    arg.beginStructure();
+    arg << c.id << c.label;
+    arg.endStructure();
+    return arg;
+}
+
+const QDBusArgument &operator>>(const QDBusArgument &arg, Choice &c)
+{
+    arg.beginStructure();
+    arg >> c.id >> c.label;
+    arg.endStructure();
+    return arg;
+}
+
 void registerDBusTypes()
 {
     qDBusRegisterMetaType<AudioDevice>();
     qDBusRegisterMetaType<AudioDeviceList>();
+    qDBusRegisterMetaType<Choice>();
+    qDBusRegisterMetaType<ChoiceList>();
 }

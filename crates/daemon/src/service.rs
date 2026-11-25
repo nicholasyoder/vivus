@@ -138,6 +138,22 @@ impl Settings {
     }
 }
 
+impl Settings {
+    /// Sends a query to the engine and waits for its answer; its errors are `InvalidArgs`.
+    async fn ask<T>(
+        &self,
+        cmd: impl FnOnce(oneshot::Sender<Result<T, String>>) -> Command,
+    ) -> fdo::Result<T> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(cmd(reply))
+            .map_err(|_| fdo::Error::Failed("engine is not running".into()))?;
+        rx.await
+            .map_err(|_| fdo::Error::Failed("engine dropped the request".into()))?
+            .map_err(fdo::Error::InvalidArgs)
+    }
+}
+
 #[interface(name = "org.vivus.Settings")]
 impl Settings {
     async fn get(&self) -> String {
@@ -155,6 +171,37 @@ impl Settings {
 
     async fn list_audio_devices(&self) -> Vec<vivus_dbus::AudioDevice> {
         self.shared.lock().unwrap().audio_devices.clone()
+    }
+
+    async fn list_providers(&self, role: String) -> fdo::Result<Vec<String>> {
+        self.ask(|reply| Command::ListProviders { role, reply })
+            .await
+    }
+
+    async fn list_models(
+        &self,
+        role: String,
+        provider: String,
+    ) -> fdo::Result<Vec<vivus_dbus::Choice>> {
+        self.ask(|reply| Command::ListModels {
+            role,
+            provider,
+            reply,
+        })
+        .await
+    }
+
+    async fn list_voices(
+        &self,
+        provider: String,
+        model: String,
+    ) -> fdo::Result<Vec<vivus_dbus::Choice>> {
+        self.ask(|reply| Command::ListVoices {
+            provider,
+            model,
+            reply,
+        })
+        .await
     }
 
     async fn meter_input(&self) -> fdo::Result<()> {

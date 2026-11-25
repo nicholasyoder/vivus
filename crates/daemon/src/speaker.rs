@@ -16,7 +16,7 @@ use crate::engine::Command;
 use crate::pronounce::{self, Pronouncer};
 use crate::voice::{LocalSpeech, resolve_local};
 
-const DEFAULT_TTS_MODEL: &str = "kitten-nano";
+pub(crate) const DEFAULT_TTS_MODEL: &str = "kitten-nano";
 /// How long a sentence may wait for pronunciation lookups. Later sentences
 /// usually wait during the previous one's playback, so only the first is felt.
 const LOOKUP_WAIT: Duration = Duration::from_secs(3);

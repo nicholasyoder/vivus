@@ -17,6 +17,7 @@ use vivus_core::{AssistantState, Config, DocumentStore};
 use vivus_speech::{Event, Mode};
 use zbus::Connection;
 
+use crate::choices::{self, ModelCache};
 use crate::clipboard::SharedClipboard;
 use crate::router::{ReplyEvent, Router};
 use crate::service;
@@ -53,8 +54,13 @@ pub enum Command {
     Ask(String),
     Cancel,
     Quit,
-    VoiceReady(Box<anyhow::Result<Voice>>),
-    SpeakerReady(Box<anyhow::Result<Speaker>>),
+    /// A loaded mic and STT, or TTS and playback, tagged with the load's
+    /// generation so a superseded load is dropped.
+    VoiceReady(u64, Box<anyhow::Result<Voice>>),
+    SpeakerReady(u64, Box<anyhow::Result<Speaker>>),
+    /// Speech settings changed a moment ago: reload if nothing newer came since.
+    LoadVoice(u64),
+    LoadSpeaker(u64),
     Speech(Event),
     /// The spoken reply has finished playing.
     SpeakingFinished,
@@ -92,7 +98,27 @@ pub enum Command {
         gain: f32,
         reply: oneshot::Sender<Result<(), String>>,
     },
+    /// `org.vivus.Settings.ListProviders`.
+    ListProviders {
+        role: String,
+        reply: oneshot::Sender<Result<Vec<String>, String>>,
+    },
+    /// `org.vivus.Settings.ListModels`; answered from a task, since remote lists are fetched.
+    ListModels {
+        role: String,
+        provider: String,
+        reply: oneshot::Sender<Result<Vec<vivus_dbus::Choice>, String>>,
+    },
+    /// `org.vivus.Settings.ListVoices`.
+    ListVoices {
+        provider: String,
+        model: String,
+        reply: oneshot::Sender<Result<Vec<vivus_dbus::Choice>, String>>,
+    },
 }
+
+/// Speech edits often come in pairs (reset the voice, set the model); load once.
+const RELOAD_SETTLE: Duration = Duration::from_millis(300);
 
 /// How long one `MeterInput` call keeps levels coming.
 const METER_LEASE: Duration = Duration::from_secs(5);
@@ -140,6 +166,10 @@ pub struct Engine {
     input_gain: Option<f32>,
     /// Metering until then.
     meter_until: Option<Instant>,
+    model_cache: ModelCache,
+    /// Latest requested load of each; older results are dropped.
+    voice_generation: u64,
+    speaker_generation: u64,
 }
 
 impl Engine {
@@ -176,6 +206,9 @@ impl Engine {
             source_volumes: HashMap::new(),
             input_gain: None,
             meter_until: None,
+            model_cache: ModelCache::default(),
+            voice_generation: 0,
+            speaker_generation: 0,
         }
     }
 
@@ -210,21 +243,49 @@ impl Engine {
 
     async fn handle(&mut self, cmd: Command) -> zbus::Result<()> {
         match cmd {
-            Command::VoiceReady(voice) => match *voice {
-                Ok(mut v) => {
-                    tracing::info!("voice ready");
-                    v.set_metering(self.meter_until.is_some());
-                    self.voice = Some(v);
+            Command::VoiceReady(generation, voice) => {
+                if generation == self.voice_generation {
+                    self.on_voice_ready(*voice).await?;
                 }
-                Err(e) => tracing::error!("voice unavailable: {e:#}"),
-            },
-            Command::SpeakerReady(speaker) => match *speaker {
-                Ok(s) => {
-                    tracing::info!("speech output ready");
-                    self.speaker = Some(s);
+            }
+            Command::SpeakerReady(generation, speaker) => {
+                if generation == self.speaker_generation {
+                    self.on_speaker_ready(*speaker).await?;
                 }
-                Err(e) => tracing::error!("speech output unavailable: {e:#}"),
-            },
+            }
+            Command::LoadVoice(generation) => {
+                if generation == self.voice_generation {
+                    self.load_voice();
+                }
+            }
+            Command::LoadSpeaker(generation) => {
+                if generation == self.speaker_generation {
+                    self.load_speaker();
+                }
+            }
+            Command::ListProviders { role, reply } => {
+                let r = choices::providers(&self.config, &role);
+                let _ = reply.send(r.map_err(|e| format!("{e:#}")));
+            }
+            Command::ListVoices {
+                provider,
+                model,
+                reply,
+            } => {
+                let r = choices::voices(&self.config, &provider, &model);
+                let _ = reply.send(r.map_err(|e| format!("{e:#}")));
+            }
+            Command::ListModels {
+                role,
+                provider,
+                reply,
+            } => {
+                let (config, cache) = (self.config.clone(), self.model_cache.clone());
+                tokio::spawn(async move {
+                    let r = choices::models(&config, &role, &provider, &cache).await;
+                    let _ = reply.send(r.map_err(|e| format!("{e:#}")));
+                });
+            }
             Command::SpeakingFinished => {
                 // A reply still in progress means this is from an older, cancelled one.
                 if self.state() == AssistantState::Speaking && self.reply.is_none() {
@@ -375,6 +436,89 @@ impl Engine {
         service::Settings::input_gain_changed(iface.signal_emitter(), wire).await
     }
 
+    fn after_settle(&self, cmd: Command) {
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(RELOAD_SETTLE).await;
+            let _ = tx.send(cmd);
+        });
+    }
+
+    /// Reopens the mic with a new STT model. The old capture goes first (its
+    /// echo canceller's node names would clash), so the mic is off while loading.
+    fn load_voice(&mut self) {
+        if let Err(e) = choices::check_local(&self.config, "stt") {
+            tracing::error!("not reloading speech recognition: {e:#}");
+            return;
+        }
+        tracing::info!("reloading speech recognition");
+        self.voice = None;
+        let (config, tx) = (self.config.clone(), self.tx.clone());
+        let generation = self.voice_generation;
+        tokio::task::spawn_blocking(move || {
+            let voice = Voice::new(&config, tx.clone());
+            let _ = tx.send(Command::VoiceReady(generation, Box::new(voice)));
+        });
+    }
+
+    /// Loads the new TTS model or voice beside the old one, which keeps
+    /// speaking until it's ready.
+    fn load_speaker(&mut self) {
+        if let Err(e) = choices::check_local(&self.config, "tts") {
+            tracing::error!("not reloading speech output: {e:#}");
+            return;
+        }
+        tracing::info!("reloading speech output");
+        let (config, tx) = (self.config.clone(), self.tx.clone());
+        let generation = self.speaker_generation;
+        let rt = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || {
+            let speaker = Speaker::new(&config, tx.clone(), &rt);
+            let _ = tx.send(Command::SpeakerReady(generation, Box::new(speaker)));
+        });
+    }
+
+    async fn on_voice_ready(&mut self, voice: anyhow::Result<Voice>) -> zbus::Result<()> {
+        let mut v = match voice {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("voice unavailable: {e:#}");
+                return Ok(());
+            }
+        };
+        tracing::info!("voice ready");
+        v.set_metering(self.meter_until.is_some());
+        // After a reload: carry on listening, unless paused for a reply.
+        if let Some(mode) = self.listen_mode
+            && !self.mic_paused
+        {
+            v.start(mode);
+        }
+        self.voice = Some(v);
+        Ok(())
+    }
+
+    async fn on_speaker_ready(&mut self, speaker: anyhow::Result<Speaker>) -> zbus::Result<()> {
+        let s = match speaker {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("speech output unavailable: {e:#}");
+                return Ok(());
+            }
+        };
+        tracing::info!("speech output ready");
+        // The old one won't report the reply it's playing as finished.
+        let speaking = self.speaker.is_some() && self.state() == AssistantState::Speaking;
+        if speaking {
+            self.cancel_reply();
+        }
+        self.speaker = Some(s);
+        if speaking {
+            self.after_reply().await?;
+        }
+        Ok(())
+    }
+
     fn schedule_meter_check(&self, after: Duration) {
         let tx = self.tx.clone();
         tokio::spawn(async move {
@@ -519,6 +663,7 @@ impl Engine {
         // Edit what's on disk now, in case a hand edit hasn't been reloaded yet.
         let current = Config::read(&file)?;
         let (text, config) = vivus_core::settings::edit(&current, &file, path, value)?;
+        choices::check_edit(&config, path)?;
         settings::write(&file, &text)?;
         self.config_file.text = text;
         Ok(self.apply_config(config).await?)
@@ -569,8 +714,21 @@ impl Engine {
         {
             self.router = None;
         }
+        let resolved =
+            |c: &Config, role| choices::check_local(c, role).map_err(|e| format!("{e:#}"));
+        let reload_voice = resolved(&self.config, "stt") != resolved(&config, "stt")
+            || paths.iter().any(|p| p == "audio.record_utterances");
+        let reload_speaker = resolved(&self.config, "tts") != resolved(&config, "tts");
         self.shared.lock().unwrap().config_json = config.to_json();
         self.config = config;
+        if reload_voice {
+            self.voice_generation += 1;
+            self.after_settle(Command::LoadVoice(self.voice_generation));
+        }
+        if reload_speaker {
+            self.speaker_generation += 1;
+            self.after_settle(Command::LoadSpeaker(self.speaker_generation));
+        }
         let changed = |key: &str| paths.iter().any(|p| p == key);
         if paths.iter().any(|p| settings::reopens_mic(p))
             && let Some(v) = &mut self.voice

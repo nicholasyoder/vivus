@@ -7,6 +7,8 @@
 #include <QObject>
 #include <QVariant>
 
+#include <functional>
+
 class OrgVivusSettingsInterface;
 
 // org.vivus.Settings: the daemon's config, edited by dotted path.
@@ -33,6 +35,14 @@ public:
     // The input's PipeWire volume, 0 to 1 as mixers show it; negative while unknown.
     double inputGain() const { return m_inputGain; }
     void setInputGain(double gain);
+
+    // Queries for the role pickers; `error` is empty on success.
+    using ProvidersReply = std::function<void(const QStringList &providers, const QString &error)>;
+    using ChoicesReply = std::function<void(const ChoiceList &choices, const QString &error)>;
+    void listProviders(const QString &role, ProvidersReply done);
+    // An empty provider (or model) is the role's default.
+    void listModels(const QString &role, const QString &provider, ChoicesReply done);
+    void listVoices(const QString &provider, const QString &model, ChoicesReply done);
 
 signals:
     void configChanged();

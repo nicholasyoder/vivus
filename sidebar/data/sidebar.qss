@@ -3,7 +3,10 @@
    #Transcript, #Input, #TalkButton, #SettingsButton, #QuitButton.
    Settings window: #VivusSettings, #InputDevice, #InputLevel (`clipped`
    property), #InputGain, #EndOfTurnSilence, #OutputDevice, #SpeechVolume,
-   #DuckVolume, #SettingsStatus, #OpenConfigButton.
+   #DuckVolume, #SettingsStatus, #OpenConfigButton; per role #SttProvider,
+   #SttModel, #TtsProvider, #TtsModel, #RouterProvider, #RouterModel,
+   #AnswerProvider, #AnswerModel, #AgentProvider, #AgentModel,
+   #VisionProvider, #VisionModel; #TtsVoice.
    #VivusSidebar and #StateDot carry a `state` property:
    idle | listening | thinking | speaking | disconnected. */
 

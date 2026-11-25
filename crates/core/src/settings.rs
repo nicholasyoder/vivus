@@ -41,6 +41,11 @@ pub fn edit(
     let (last, parents) = keys.split_last().unwrap();
     let mut table: &mut dyn TableLike = doc.as_table_mut();
     for (i, key) in parents.iter().enumerate() {
+        // Removing under a missing table: nothing to do, and creating it empty
+        // could make it invalid (a role needs a provider).
+        if value.is_none() && !table.contains_key(key) {
+            return finish(doc, file);
+        }
         let item = table.entry(key).or_insert_with(|| {
             let mut t = Table::new();
             t.set_implicit(true);
@@ -63,6 +68,10 @@ pub fn edit(
             table.remove(last);
         }
     }
+    finish(doc, file)
+}
+
+fn finish(doc: DocumentMut, file: &Path) -> Result<(String, Config), SettingsError> {
     let text = doc.to_string();
     let config = Config::parse(&text, file).map_err(|e| match e {
         // Without the file path and line, which say nothing to a settings UI.
@@ -149,6 +158,15 @@ echo_cancel = true
         let (text, config) = set(FILE, "audio.echo_cancel", None).unwrap();
         assert!(!text.contains("echo_cancel"));
         assert!(config.audio.echo_cancel); // the default
+    }
+
+    #[test]
+    fn reset_under_missing_table() {
+        let (text, _) = set(FILE, "roles.tts.voice", None).unwrap();
+        assert_eq!(text, FILE);
+        let text = "[providers.l]\nkind = \"local-speech\"\n[roles.tts]\nprovider = \"l\"\n";
+        let (text, config) = set(text, "roles.tts", None).unwrap();
+        assert!(!text.contains("roles") && config.roles.tts.is_none());
     }
 
     #[test]

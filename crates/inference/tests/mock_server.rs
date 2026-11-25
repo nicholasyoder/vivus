@@ -157,3 +157,15 @@ async fn dropping_the_stream_closes_the_connection() {
     let mut b = [0u8; 1];
     assert_eq!(sock.read(&mut b).await.unwrap_or(0), 0);
 }
+
+#[tokio::test]
+async fn lists_models() {
+    let (client, rx) = serve(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\n\r\n",
+        vec![r#"{"object":"list","data":[{"id":"b-model"},{"id":"a-model"},{"x":1}]}"#.into()],
+    )
+    .await;
+    assert_eq!(client.models().await.unwrap(), ["a-model", "b-model"]);
+    let (req, _) = rx.await.unwrap();
+    assert!(req.starts_with("GET /v1/models "), "{req}");
+}

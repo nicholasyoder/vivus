@@ -9,6 +9,9 @@ pub const PATH: &str = "/org/vivus";
 /// `ListAudioDevices` entry: node name, description, is default, `source` | `sink`.
 pub type AudioDevice = (String, String, bool, String);
 
+/// `ListModels` / `ListVoices` entry: id (empty for the default), label.
+pub type Choice = (String, String);
+
 #[proxy(
     interface = "org.vivus.Assistant",
     default_service = "org.vivus",
@@ -61,6 +64,10 @@ pub trait Settings {
     fn changed(&self, paths: Vec<String>) -> zbus::Result<()>;
     #[zbus(signal)]
     fn audio_devices_changed(&self, devices: Vec<AudioDevice>) -> zbus::Result<()>;
+
+    fn list_providers(&self, role: &str) -> zbus::Result<Vec<String>>;
+    fn list_models(&self, role: &str, provider: &str) -> zbus::Result<Vec<Choice>>;
+    fn list_voices(&self, provider: &str, model: &str) -> zbus::Result<Vec<Choice>>;
 
     fn meter_input(&self) -> zbus::Result<()>;
     #[zbus(signal)]

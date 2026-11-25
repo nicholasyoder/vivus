@@ -1,8 +1,11 @@
 #pragma once
 
+#include "dbustypes.h"
+
 #include <QWidget>
 
 #include <functional>
+#include <vector>
 
 class DaemonClient;
 class SettingsClient;
@@ -28,6 +31,33 @@ protected:
     void hideEvent(QHideEvent *event) override;
 
 private:
+    // One [roles.*] table: provider and model pickers, plus the voice for tts.
+    struct RoleRow {
+        QString role;
+        QComboBox *provider = nullptr;
+        QComboBox *model = nullptr;
+        QComboBox *voice = nullptr;
+        // What the model list was fetched for, or null when it needs fetching.
+        QString modelsFor;
+        ChoiceList models;
+        QString modelsError;
+        QString voicesFor;
+        ChoiceList voices;
+    };
+
+    QWidget *addRole(const QString &role, const QString &tooltip);
+    void updateRoles();
+    void fillProviders(RoleRow &row, const QStringList &providers);
+    void syncModels(RoleRow &row);
+    void fillModels(RoleRow &row);
+    void syncVoices(RoleRow &row);
+    void fillVoices(RoleRow &row);
+    void onProviderActivated(RoleRow &row);
+    void commitModel(RoleRow &row);
+    void onVoiceActivated(RoleRow &row);
+    QString roleValue(const RoleRow &row, const char *key) const;
+    RoleRow *findRole(const QString &role);
+
     void updateConnected();
     void updateConfig();
     void updateDevices();
@@ -57,4 +87,5 @@ private:
     QSlider *m_duck;
     QLabel *m_duckLabel;
     QLabel *m_status;
+    std::vector<RoleRow> m_roles;
 };

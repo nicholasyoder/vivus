@@ -40,9 +40,9 @@ A new `org.vivus.Settings` interface on `/org/vivus` (contract first, as usual):
   volume (see [Input gain](#input-gain)).
 - `ListAudioDevices() → a(ssbs)`: id, description, is-default, direction
   (`source` / `sink`). `AudioDevicesChanged` is emitted on hotplug.
-- `ListModels(s role) → a(ss)`: model id, label. For local speech this lists
-  what's on disk under the models dir; for OpenAI-compatible providers it
-  queries `/models`.
+- `ListProviders(s role) → as`, `ListModels(s role, s provider) → a(ss)`,
+  `ListVoices(s provider, s model) → a(ss)`: what the role pickers offer (see
+  [Roles and providers](#roles-and-providers)).
 
 As with `org.vivus.Assistant`, the methods only enqueue engine commands.
 `Set`/`Reset` carry a oneshot reply, so the call returns once the engine has
@@ -64,10 +64,10 @@ accepted or refused the edit. `vivusctl settings get|set|reset` wraps these.
   turn), `debug.*`, the mic settings `audio.input`, `audio.echo_cancel`,
   `audio.keep_mic_open` (see [Audio devices](#audio-devices)), and
   `audio.output`, `audio.end_of_turn_silence` (the VAD is recreated, dropping
-  an utterance in progress), `audio.speech_volume`, `audio.duck_volume`.
-  After a restart, for now: `audio.record_utterances`, `shortcuts.*`,
-  `roles.stt.*`, `roles.tts.*` and local-speech `models_dir`/`threads`
-  (`settings::needs_restart`). The daemon logs which.
+  an utterance in progress), `audio.speech_volume`, `audio.duck_volume`, and
+  speech models (see [Reloading speech](#reloading-speech)). Only
+  `shortcuts.*` waits for a restart (`settings::needs_restart`); the daemon
+  logs it.
 
 ## Audio devices
 
@@ -170,12 +170,59 @@ and registered at startup.
 
 ## Roles and providers
 
-Per role (stt, tts, router, answer, agent, vision): a provider picker filtered
-to the providers that can serve that role (e.g. only `local-speech` and remote
-STT providers for `stt`), then a model picker from `ListModels`, plus
-role-specific extras (TTS voice). Adding or editing providers (base URL, API key)
-comes later and depends on how API keys are stored (see the roadmap's open
-questions).
+The window's Models group has a row per role (stt, tts, router, answer,
+agent, vision): a provider picker, then a model picker, plus the TTS voice.
+Adding or editing providers (base URL, API key) comes later and depends on
+how API keys are stored (see the roadmap's open questions).
+
+- **Providers.** `ListProviders(role)` returns the configured providers whose
+  kind can serve the role (`Provider::serves`): `local-speech` for stt/tts,
+  `openai-compatible` for the LLM roles, `claude-code` for answer and agent
+  only (the router needs streamed tool calls). The first picker entry is the
+  unset role: "Default (local)" for stt/tts, "None" for the rest (agent then
+  falls back to answer).
+- **Models.** `ListModels(role, provider)` gives `(id, label)`; an empty id is
+  the unset model, labelled with the default it stands for. Local speech
+  lists catalog models that are on disk (`installed()`), with labels from the
+  catalog. `claude-code` offers its aliases (haiku, sonnet, opus). An
+  `openai-compatible` provider is asked for `GET /models`, cached for 5
+  minutes per provider, with speech, embedding and guard models dropped by
+  id. That list can be long (nano-gpt: ~600) and may lack a model the
+  provider still serves, so its picker is editable: type to filter, or enter
+  any id. A configured model missing from the list stays shown.
+- **Voices.** `ListVoices(provider, model)` lists a TTS model's voices with
+  readable labels (`af_heart` → "Heart (American, female)"; Kitten's
+  `expr-voice-*` aliases are skipped).
+- **Edits.** A model or voice belongs to its provider or model, so changing
+  the provider resets `model` (and `voice`) before setting `provider`, and
+  changing the TTS model resets `voice` first. Each step is a config the
+  daemon accepts; the speech reload waits for them to settle. Choosing the
+  first provider entry resets the whole `[roles.<role>]` table. `Reset` of a
+  key under a missing table is a no-op (creating an empty `[roles.tts]` would
+  be invalid: a role needs a provider).
+- **Checks.** A `Set`/`Reset` under `roles.stt` or `roles.tts` is refused
+  unless the model is known and downloaded and the voice belongs to it, so
+  `vivusctl settings set roles.tts.voice bella` with Kokoro fails with the
+  known voices instead of breaking speech later.
+- `vivusctl settings providers|models|voices` print the same lists.
+
+### Reloading speech
+
+A change to what `roles.stt` or `roles.tts` resolves to (provider, model,
+voice, or the local-speech provider's `models_dir`/`threads`) reloads that
+side 300 ms after the last such change, so a reset-then-set pair loads once.
+Each load carries a generation and an older result is dropped. A config that
+can't load (a hand edit naming a missing model) is logged and the old models
+are kept.
+
+- **TTS** loads beside the old speaker, which keeps talking until the new
+  one is ready; then a reply still playing is cut (the new stream wouldn't
+  report it finishing) and the old speaker is dropped. Kokoro takes about 2 s
+  to load, Kitten under 1 s.
+- **STT** has to close the mic first, since the new capture's echo-cancel
+  nodes would clash with the old one's. The mic is off for the load (about
+  1 s for parakeet-110m), then listening resumes in the same mode.
+  `audio.record_utterances` reloads it the same way.
 
 ## Later
 

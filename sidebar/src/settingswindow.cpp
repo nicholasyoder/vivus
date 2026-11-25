@@ -3,6 +3,8 @@
 #include "settingsclient.h"
 
 #include <QComboBox>
+#include <QCompleter>
+#include <QLineEdit>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDoubleSpinBox>
@@ -50,7 +52,7 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
     setWindowTitle(tr("Vivus Settings"));
     // Closing it while the sidebar is hidden mustn't quit the app.
     setAttribute(Qt::WA_QuitOnClose, false);
-    resize(520, 0);
+    resize(560, 0);
 
     m_form = new QWidget(this);
 
@@ -127,13 +129,36 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
     speechForm->addRow(tr("Volume"), volumeRow);
     speechForm->addRow(tr("Other apps while talking"), duckRow);
 
-    // One label column across both groups.
+    // Roles: speech models, then the LLM roles.
+    m_roles.reserve(6);
+    auto *models = new QGroupBox(tr("Models"), m_form);
+    auto *modelsForm = new QFormLayout(models);
+    modelsForm->addRow(tr("Speech recognition"), addRole(QStringLiteral("stt"), tr("Turns what you say into text")));
+    modelsForm->addRow(tr("Speech output"), addRole(QStringLiteral("tts"), tr("Speaks replies")));
+    {
+        auto &tts = m_roles.back();
+        tts.voice = new QComboBox(m_form);
+        tts.voice->setObjectName(QStringLiteral("TtsVoice"));
+        tts.voice->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        connect(tts.voice, &QComboBox::activated, this, [this] { onVoiceActivated(*findRole(QStringLiteral("tts"))); });
+        modelsForm->addRow(tr("Voice"), tts.voice);
+    }
+    modelsForm->addRow(tr("Quick replies"),
+                       addRole(QStringLiteral("router"), tr("Answers every request first and decides when to hand off; "
+                                                            "a fast model with tool calls")));
+    modelsForm->addRow(tr("Longer answers"),
+                       addRole(QStringLiteral("answer"), tr("Takes questions that need more thought or research")));
+    modelsForm->addRow(tr("Tasks"),
+                       addRole(QStringLiteral("agent"), tr("Multi-step work; uses the longer-answers model when unset")));
+    modelsForm->addRow(tr("Vision"), addRole(QStringLiteral("vision"), tr("Not used yet: screen awareness comes later")));
+
+    // One label column across all groups.
     int labelWidth = 0;
-    for (auto *f : {micForm, speechForm})
+    for (auto *f : {micForm, speechForm, modelsForm})
         for (int row = 0; row < f->rowCount(); ++row)
             if (auto *item = f->itemAt(row, QFormLayout::LabelRole))
                 labelWidth = std::max(labelWidth, item->widget()->sizeHint().width());
-    for (auto *f : {micForm, speechForm})
+    for (auto *f : {micForm, speechForm, modelsForm})
         for (int row = 0; row < f->rowCount(); ++row)
             if (auto *item = f->itemAt(row, QFormLayout::LabelRole))
                 item->widget()->setMinimumWidth(labelWidth);
@@ -142,6 +167,7 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
     formLayout->setContentsMargins(0, 0, 0, 0);
     formLayout->addWidget(mic);
     formLayout->addWidget(speech);
+    formLayout->addWidget(models);
 
     m_status = new QLabel(this);
     m_status->setObjectName(QStringLiteral("SettingsStatus"));
@@ -228,6 +254,11 @@ QTimer *SettingsWindow::debounce(std::function<void()> commit)
 void SettingsWindow::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+    // Lists may have changed while hidden (downloads, a provider's catalog).
+    for (auto &row : m_roles) {
+        row.modelsFor.clear();
+        row.voicesFor.clear();
+    }
     if (m_daemon->connected()) {
         m_settings->refresh();
         m_settings->meterInput();
@@ -276,6 +307,7 @@ void SettingsWindow::updateConfig()
         label->setText(tr("%1%").arg(v));
     }
     updateDevices();
+    updateRoles();
 }
 
 void SettingsWindow::updateDevices()
@@ -355,4 +387,234 @@ void SettingsWindow::showError(const QString &path, const QString &message)
 {
     m_status->setText(tr("Couldn't set %1: %2").arg(path, message));
     m_status->show();
+}
+
+// Object names: SttProvider, SttModel, RouterProvider, ...
+QWidget *SettingsWindow::addRole(const QString &role, const QString &tooltip)
+{
+    const QString prefix = role.left(1).toUpper() + role.mid(1);
+    RoleRow row;
+    row.role = role;
+    row.provider = new QComboBox(m_form);
+    row.provider->setObjectName(prefix + QStringLiteral("Provider"));
+    row.provider->setToolTip(tooltip);
+    // One width for all, so the model pickers line up.
+    row.provider->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    row.provider->setMinimumContentsLength(11);
+    row.model = new QComboBox(m_form);
+    row.model->setObjectName(prefix + QStringLiteral("Model"));
+    row.model->setToolTip(tooltip);
+    row.model->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    row.model->setMinimumContentsLength(12);
+    row.model->setInsertPolicy(QComboBox::NoInsert);
+    m_roles.push_back(row);
+
+    connect(row.provider, &QComboBox::activated, this, [this, role] { onProviderActivated(*findRole(role)); });
+    connect(row.model, &QComboBox::activated, this, [this, role] { commitModel(*findRole(role)); });
+
+    auto *box = new QWidget(m_form);
+    auto *layout = new QHBoxLayout(box);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(row.provider);
+    layout->addWidget(row.model, 1);
+    return box;
+}
+
+SettingsWindow::RoleRow *SettingsWindow::findRole(const QString &role)
+{
+    for (auto &row : m_roles)
+        if (row.role == role)
+            return &row;
+    return nullptr;
+}
+
+// roles.<role>.<key>; empty when unset.
+QString SettingsWindow::roleValue(const RoleRow &row, const char *key) const
+{
+    return m_settings->value(QStringLiteral("roles.%1.%2").arg(row.role, QLatin1String(key))).toString();
+}
+
+static bool isSpeechRole(const QString &role)
+{
+    return role == QLatin1String("stt") || role == QLatin1String("tts");
+}
+
+void SettingsWindow::updateRoles()
+{
+    for (auto &row : m_roles) {
+        const QString role = row.role;
+        m_settings->listProviders(role, [this, role](const QStringList &providers, const QString &) {
+            if (auto *row = findRole(role))
+                fillProviders(*row, providers);
+        });
+        syncModels(row);
+    }
+}
+
+// The first entry is the unset role: local speech for stt/tts, nothing for the rest.
+void SettingsWindow::fillProviders(RoleRow &row, const QStringList &providers)
+{
+    const QString chosen = roleValue(row, "provider");
+    const QSignalBlocker b(row.provider);
+    row.provider->clear();
+    row.provider->addItem(isSpeechRole(row.role) ? tr("Default (local)") : tr("None"), QVariant());
+    for (const auto &p : providers)
+        row.provider->addItem(p, p);
+    if (!chosen.isEmpty() && row.provider->findData(chosen) < 0)
+        row.provider->addItem(tr("%1 (can't serve this)").arg(chosen), chosen);
+    row.provider->setCurrentIndex(chosen.isEmpty() ? 0 : row.provider->findData(chosen));
+}
+
+// Re-lists models only when the provider changed (or the window reopened).
+void SettingsWindow::syncModels(RoleRow &row)
+{
+    const QString provider = roleValue(row, "provider");
+    if (provider.isEmpty() && !isSpeechRole(row.role)) {
+        row.modelsFor.clear();
+        row.models.clear();
+        row.modelsError.clear();
+        fillModels(row);
+        return;
+    }
+    // Never null once requested, so "" (the default provider) counts as listed.
+    const QString key = provider.isNull() ? QStringLiteral("") : provider;
+    if (row.modelsFor.isNull() || row.modelsFor != key) {
+        row.modelsFor = key;
+        const QString role = row.role;
+        m_settings->listModels(role, key, [this, role, key](const ChoiceList &models, const QString &error) {
+            auto *row = findRole(role);
+            if (!row || row->modelsFor != key)
+                return; // the provider changed meanwhile
+            row->models = models;
+            row->modelsError = error;
+            fillModels(*row);
+        });
+    }
+    fillModels(row);
+}
+
+void SettingsWindow::fillModels(RoleRow &row)
+{
+    const QString provider = roleValue(row, "provider");
+    const QString chosen = roleValue(row, "model");
+    const bool none = provider.isEmpty() && !isSpeechRole(row.role);
+    // Remote catalogs are long and may lack a model you can still use: type to search or enter one.
+    const QString kind = m_settings->value(QStringLiteral("providers.%1.kind").arg(provider)).toString();
+    const bool editable = kind == QLatin1String("openai-compatible");
+
+    const QSignalBlocker b(row.model);
+    row.model->clear();
+    row.model->setEnabled(!none);
+    if (row.model->isEditable() != editable) {
+        row.model->setEditable(editable);
+        if (editable) {
+            row.model->completer()->setFilterMode(Qt::MatchContains);
+            row.model->completer()->setCompletionMode(QCompleter::PopupCompletion);
+            const QString role = row.role;
+            connect(row.model->lineEdit(), &QLineEdit::editingFinished, this,
+                    [this, role] { commitModel(*findRole(role)); });
+        }
+    }
+    if (none)
+        return;
+    for (const auto &m : row.models)
+        row.model->addItem(m.label, m.id.isEmpty() ? QVariant() : QVariant(m.id));
+    if (!chosen.isEmpty() && row.model->findData(chosen) < 0)
+        row.model->addItem(editable ? chosen : tr("%1 (not available)").arg(chosen), chosen);
+    row.model->setToolTip(row.modelsError.isEmpty() ? QString() : tr("Couldn't list models: %1").arg(row.modelsError));
+    if (editable) {
+        row.model->lineEdit()->setPlaceholderText(tr("Choose or type a model"));
+        row.model->setCurrentIndex(chosen.isEmpty() ? -1 : row.model->findData(chosen));
+        if (chosen.isEmpty())
+            row.model->setEditText(QString());
+        row.model->lineEdit()->setCursorPosition(0); // a long id shows its start
+    } else {
+        const int i = chosen.isEmpty() ? row.model->findData(QVariant()) : row.model->findData(chosen);
+        row.model->setCurrentIndex(std::max(i, 0));
+    }
+    if (row.voice)
+        syncVoices(row);
+}
+
+void SettingsWindow::syncVoices(RoleRow &row)
+{
+    const QString key = roleValue(row, "provider") + QLatin1Char('/') + roleValue(row, "model");
+    if (row.voicesFor != key) {
+        row.voicesFor = key;
+        const QString role = row.role;
+        m_settings->listVoices(roleValue(row, "provider"), roleValue(row, "model"),
+                               [this, role, key](const ChoiceList &voices, const QString &) {
+                                   auto *row = findRole(role);
+                                   if (!row || row->voicesFor != key)
+                                       return;
+                                   row->voices = voices;
+                                   fillVoices(*row);
+                               });
+    }
+    fillVoices(row);
+}
+
+void SettingsWindow::fillVoices(RoleRow &row)
+{
+    const QString chosen = roleValue(row, "voice");
+    const QSignalBlocker b(row.voice);
+    row.voice->clear();
+    for (const auto &v : row.voices)
+        row.voice->addItem(v.label, v.id.isEmpty() ? QVariant() : QVariant(v.id));
+    if (!chosen.isEmpty() && row.voice->findData(chosen) < 0)
+        row.voice->addItem(tr("%1 (unknown)").arg(chosen), chosen);
+    const int i = chosen.isEmpty() ? row.voice->findData(QVariant()) : row.voice->findData(chosen);
+    row.voice->setCurrentIndex(std::max(i, 0));
+}
+
+// The old model (and voice) belong to the old provider, so they go first; each
+// step leaves a config the daemon accepts.
+void SettingsWindow::onProviderActivated(RoleRow &row)
+{
+    const QVariant provider = row.provider->currentData();
+    if (provider.toString() == roleValue(row, "provider"))
+        return;
+    const QString table = QStringLiteral("roles.") + row.role;
+    if (provider.isNull()) {
+        m_settings->reset(table);
+        return;
+    }
+    if (row.voice)
+        m_settings->reset(table + QStringLiteral(".voice"));
+    m_settings->reset(table + QStringLiteral(".model"));
+    m_settings->set(table + QStringLiteral(".provider"), provider.toString());
+}
+
+// From the list, or typed into an editable picker.
+void SettingsWindow::commitModel(RoleRow &row)
+{
+    QVariant model = row.model->currentData();
+    if (row.model->isEditable()) {
+        const QString text = row.model->currentText().trimmed();
+        const int i = row.model->findText(text);
+        model = i >= 0 ? row.model->itemData(i) : QVariant(text);
+        if (text.isEmpty())
+            return; // the role needs a model; leave it as it is
+    }
+    if (model.toString() == roleValue(row, "model"))
+        return;
+    const QString table = QStringLiteral("roles.") + row.role;
+    // A voice belongs to its model.
+    if (row.voice)
+        m_settings->reset(table + QStringLiteral(".voice"));
+    if (model.isNull())
+        m_settings->reset(table + QStringLiteral(".model"));
+    else
+        m_settings->set(table + QStringLiteral(".model"), model.toString());
+}
+
+void SettingsWindow::onVoiceActivated(RoleRow &row)
+{
+    const QVariant voice = row.voice->currentData();
+    if (voice.toString() == roleValue(row, "voice"))
+        return;
+    if (voice.isNull())
+        m_settings->reset(QStringLiteral("roles.tts.voice"));
+    else
+        m_settings->set(QStringLiteral("roles.tts.voice"), voice.toString());
 }

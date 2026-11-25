@@ -72,6 +72,15 @@ enum SettingsCmd {
     Meter,
     /// Print the mic's gain (its PipeWire volume, 0 to 1), or set it.
     Gain { value: Option<f64> },
+    /// Configured providers that can serve a role (stt, tts, router, answer, agent, vision).
+    Providers { role: String },
+    /// Models for `roles.<role>.model`: the role's provider unless one is given.
+    Models {
+        role: String,
+        provider: Option<String>,
+    },
+    /// TTS voices for `roles.tts.voice`: the configured model unless one is given.
+    Voices { model: Option<String> },
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -172,6 +181,26 @@ async fn settings(conn: &zbus::Connection, action: SettingsCmd) -> anyhow::Resul
                 println!("{gain:.2}");
             }
         }
+        SettingsCmd::Providers { role } => {
+            for p in proxy.list_providers(&role).await.context(DAEMON)? {
+                println!("{p}");
+            }
+        }
+        SettingsCmd::Models { role, provider } => {
+            let provider = match provider {
+                Some(p) => p,
+                None => role_value(&proxy, &role, "provider").await?,
+            };
+            print_choices(proxy.list_models(&role, &provider).await.context(DAEMON)?);
+        }
+        SettingsCmd::Voices { model } => {
+            let provider = role_value(&proxy, "tts", "provider").await?;
+            let model = match model {
+                Some(m) => m,
+                None => role_value(&proxy, "tts", "model").await?,
+            };
+            print_choices(proxy.list_voices(&provider, &model).await.context(DAEMON)?);
+        }
         SettingsCmd::Meter => {
             use futures_util::StreamExt;
             let mut levels = proxy.receive_input_level().await?;
@@ -192,6 +221,29 @@ async fn settings(conn: &zbus::Connection, action: SettingsCmd) -> anyhow::Resul
         }
     }
     Ok(())
+}
+
+const DAEMON: &str = "talking to vivus-daemon (is it running?)";
+
+/// `roles.<role>.<key>` from the effective config; empty if unset.
+async fn role_value(proxy: &SettingsProxy<'_>, role: &str, key: &str) -> anyhow::Result<String> {
+    let json: serde_json::Value = serde_json::from_str(&proxy.get().await.context(DAEMON)?)?;
+    Ok(json["roles"][role][key]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned())
+}
+
+/// An empty id is the default (unset).
+fn print_choices(list: Vec<(String, String)>) {
+    for (id, label) in list {
+        let id = if id.is_empty() { "(unset)" } else { &id };
+        if *id == label {
+            println!("{id}");
+        } else {
+            println!("{id:<28} {label}");
+        }
+    }
 }
 
 fn to_variant(v: &toml_edit::Value) -> anyhow::Result<zvariant::Value<'static>> {

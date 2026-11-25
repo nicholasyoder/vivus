@@ -64,6 +64,39 @@ impl Client {
         Ok(Self::new(base_url, api_key))
     }
 
+    /// Model ids from `GET /models`, sorted.
+    pub async fn models(&self) -> Result<Vec<String>, Error> {
+        let mut rb = self
+            .http
+            .get(format!("{}/models", self.base_url))
+            .timeout(Duration::from_secs(15));
+        if let Some(key) = &self.api_key {
+            rb = rb.bearer_auth(key);
+        }
+        let resp = rb.send().await?;
+        let status = resp.status();
+        let text = resp.text().await?;
+        if !status.is_success() {
+            return Err(Error::Status {
+                status: status.as_u16(),
+                message: error_message(&text),
+            });
+        }
+        let body: Value =
+            serde_json::from_str(&text).map_err(|e| Error::Api(format!("/models: {e}")))?;
+        // `{"data": [...]}` per OpenAI; a few servers send the bare array.
+        let list = body.get("data").unwrap_or(&body);
+        let mut ids: Vec<String> = list
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m.get("id")?.as_str().map(str::to_owned))
+            .collect();
+        ids.sort();
+        ids.dedup();
+        Ok(ids)
+    }
+
     /// Starts a streaming completion. Dropping the stream cancels the request.
     pub async fn chat(&self, req: &ChatRequest) -> Result<ChatStream, Error> {
         let mut body = serde_json::to_value(req).expect("request serializes");

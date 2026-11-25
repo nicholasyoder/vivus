@@ -82,6 +82,35 @@ void SettingsClient::setInputGain(double gain)
     watch(QStringLiteral("input gain"), m_iface->SetInputGain(gain));
 }
 
+template<typename T, typename F>
+static void onReply(QObject *ctx, const QDBusPendingCall &call, F done)
+{
+    auto *w = new QDBusPendingCallWatcher(call, ctx);
+    QObject::connect(w, &QDBusPendingCallWatcher::finished, ctx, [done](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+        QDBusPendingReply<T> reply = *w;
+        if (reply.isError())
+            done(T(), reply.error().message());
+        else
+            done(reply.value(), QString());
+    });
+}
+
+void SettingsClient::listProviders(const QString &role, ProvidersReply done)
+{
+    onReply<QStringList>(this, m_iface->ListProviders(role), std::move(done));
+}
+
+void SettingsClient::listModels(const QString &role, const QString &provider, ChoicesReply done)
+{
+    onReply<ChoiceList>(this, m_iface->ListModels(role, provider), std::move(done));
+}
+
+void SettingsClient::listVoices(const QString &provider, const QString &model, ChoicesReply done)
+{
+    onReply<ChoiceList>(this, m_iface->ListVoices(provider, model), std::move(done));
+}
+
 void SettingsClient::meterInput()
 {
     m_iface->MeterInput();

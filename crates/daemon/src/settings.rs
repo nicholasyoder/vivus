@@ -84,23 +84,10 @@ pub fn reopens_mic(path: &str) -> bool {
     )
 }
 
-/// Audio settings the engine applies without reopening the mic.
-fn audio_live(path: &str) -> bool {
-    matches!(
-        path,
-        "audio.end_of_turn_silence" | "audio.duck_volume" | "audio.speech_volume"
-    )
-}
-
-/// Settings that take effect only when the daemon restarts (speech threads
-/// and portal shortcuts are set up once).
+/// Settings that take effect only when the daemon restarts (portal shortcuts
+/// are bound once).
 pub fn needs_restart(path: &str) -> bool {
-    (path.starts_with("audio.") && !reopens_mic(path) && !audio_live(path))
-        || ["shortcuts.", "roles.stt.", "roles.tts."]
-            .iter()
-            .any(|p| path.starts_with(p))
-        || path.starts_with("providers.")
-            && (path.ends_with(".models_dir") || path.ends_with(".threads"))
+    path.starts_with("shortcuts.")
 }
 
 /// D-Bus variant → TOML value: strings, booleans, numbers and arrays of them.
@@ -155,8 +142,9 @@ mod tests {
         assert!(!needs_restart("audio.input"));
         assert!(!needs_restart("audio.output") && reopens_mic("audio.output"));
         assert!(!needs_restart("audio.duck_volume"));
-        assert!(needs_restart("audio.record_utterances"));
-        assert!(needs_restart("providers.local-speech.threads"));
+        assert!(!needs_restart("audio.record_utterances"));
+        assert!(!needs_restart("providers.local-speech.threads"));
+        assert!(needs_restart("shortcuts.push_to_talk"));
         assert!(!needs_restart("roles.router.model"));
         assert!(!needs_restart("debug.transcribe_only"));
     }

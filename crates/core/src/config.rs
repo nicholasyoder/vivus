@@ -133,6 +133,24 @@ pub enum Provider {
     },
 }
 
+/// Roles a `[roles.*]` table can name.
+pub const ROLES: &[&str] = &["stt", "tts", "router", "answer", "agent", "vision"];
+
+impl Provider {
+    /// Whether this kind of provider can serve `role` (what's implemented, not
+    /// what the API could do: no remote STT/TTS yet).
+    pub fn serves(&self, role: &str) -> bool {
+        match self {
+            Provider::LocalSpeech { .. } => matches!(role, "stt" | "tts"),
+            Provider::OpenaiCompatible { .. } => {
+                matches!(role, "router" | "answer" | "agent" | "vision")
+            }
+            // The router needs streamed tool calls, which `claude -p` doesn't give us.
+            Provider::ClaudeCode { .. } => matches!(role, "answer" | "agent"),
+        }
+    }
+}
+
 fn default_speech_threads() -> i32 {
     2
 }
@@ -157,6 +175,10 @@ pub struct Roles {
 }
 
 impl Roles {
+    pub fn get(&self, role: &str) -> Option<&Role> {
+        self.iter().find(|(n, _)| *n == role).map(|(_, r)| r)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&'static str, &Role)> {
         [
             ("stt", &self.stt),

@@ -12,7 +12,7 @@ use vivus_speech::{Listener, Mode, Recorder, VadOptions, stt};
 
 use crate::engine::Command;
 
-const DEFAULT_STT_MODEL: &str = "parakeet-tdt-110m";
+pub(crate) const DEFAULT_STT_MODEL: &str = "parakeet-tdt-110m";
 
 enum Msg {
     Audio(Vec<f32>),
@@ -200,6 +200,7 @@ fn spawn_capture(
 }
 
 /// A speech role resolved to the local-speech provider.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LocalSpeech {
     pub models_dir: PathBuf,
     pub threads: i32,
@@ -214,32 +215,42 @@ pub(crate) fn resolve_local(
     role: Option<&Role>,
     default_model: &str,
 ) -> anyhow::Result<LocalSpeech> {
+    let provider = role.map(|r| (r.provider.as_str(), &config.providers[&r.provider]));
+    let (models_dir, threads) = local_provider(name, provider)?;
+    Ok(LocalSpeech {
+        models_dir,
+        threads,
+        model: role
+            .and_then(|r| r.model.clone())
+            .unwrap_or_else(|| default_model.into()),
+        voice: role.and_then(|r| r.voice.clone()),
+    })
+}
+
+/// Models dir and thread count of a local-speech provider (`None`: the default one).
+pub(crate) fn local_provider(
+    role: &str,
+    provider: Option<(&str, &Provider)>,
+) -> anyhow::Result<(PathBuf, i32)> {
     let default_dir = || vivus_speech::default_models_dir().context("no home directory");
-    let Some(role) = role else {
-        return Ok(LocalSpeech {
-            models_dir: default_dir()?,
-            threads: 2,
-            model: default_model.into(),
-            voice: None,
-        });
-    };
-    match &config.providers[&role.provider] {
-        Provider::LocalSpeech {
-            models_dir,
-            threads,
-        } => Ok(LocalSpeech {
-            models_dir: match models_dir {
+    match provider {
+        None => Ok((default_dir()?, 2)),
+        Some((
+            _,
+            Provider::LocalSpeech {
+                models_dir,
+                threads,
+            },
+        )) => Ok((
+            match models_dir {
                 Some(d) => expand_tilde(d),
                 None => default_dir()?,
             },
-            threads: *threads,
-            model: role.model.clone().unwrap_or_else(|| default_model.into()),
-            voice: role.voice.clone(),
-        }),
-        _ => bail!(
-            "{name} provider `{}`: only local-speech is implemented so far",
-            role.provider
-        ),
+            *threads,
+        )),
+        Some((name, _)) => {
+            bail!("{role} provider `{name}`: only local-speech is implemented so far")
+        }
     }
 }
 

@@ -92,6 +92,33 @@
       <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="AudioDeviceList"/>
     </signal>
 
+    <!-- Configured providers that can serve a role (stt, tts, router, answer,
+         agent, vision): the names roles.<role>.provider takes. -->
+    <method name="ListProviders">
+      <arg name="role" type="s" direction="in"/>
+      <arg name="providers" type="as" direction="out"/>
+    </method>
+    <!-- Models a provider offers for a role: id (the roles.<role>.model value)
+         and label. An empty id is the unset model, i.e. the provider's default.
+         An empty provider is the role's default provider (local speech for stt
+         and tts). Local speech lists the models on disk, openai-compatible
+         providers their /models, claude-code its aliases. Fails with the reason
+         if the provider can't be reached. -->
+    <method name="ListModels">
+      <arg name="role" type="s" direction="in"/>
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="models" type="a(ss)" direction="out"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="ChoiceList"/>
+    </method>
+    <!-- TTS voices of a model, as id and label; empty id is the model's default
+         voice. Empty provider or model mean the defaults, as in ListModels. -->
+    <method name="ListVoices">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="model" type="s" direction="in"/>
+      <arg name="voices" type="a(ss)" direction="out"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="ChoiceList"/>
+    </method>
+
     <!-- Sends InputLevel for the next 5 s, keeping the mic open meanwhile;
          call again to extend (a settings page calls it every couple of seconds). -->
     <method name="MeterInput"/>

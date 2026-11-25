@@ -77,6 +77,7 @@ cargo run -p vivusctl -- settings get audio
 cargo run -p vivusctl -- settings devices   # names for audio.input / audio.output
 cargo run -p vivusctl -- settings meter     # mic level, as speech recognition hears it
 cargo run -p vivusctl -- settings gain 0.4  # mic gain (PipeWire volume); no value prints it
+cargo run -p vivusctl -- settings models router   # what roles.router.model can be (also: providers, voices)
 ```
 
 Benchmark STT models on a WAV (16 kHz mono):
