@@ -14,6 +14,7 @@ use crate::router::{ReplyEvent, Router};
 use crate::service;
 use crate::speaker::Speaker;
 use crate::voice::Voice;
+use crate::windows::SharedWindows;
 
 /// State read synchronously by D-Bus property/method handlers. Never hold the
 /// lock across an await.
@@ -36,6 +37,8 @@ pub enum Command {
     Speech(Event),
     /// The spoken reply has finished playing.
     SpeakingFinished,
+    /// A window gained focus; its title may be spoken soon.
+    WindowFocused(String),
     Reply {
         generation: u64,
         event: ReplyEvent,
@@ -67,6 +70,7 @@ pub struct Engine {
     router: Option<Arc<Router>>,
     reply: Option<Reply>,
     generation: u64,
+    windows: Option<SharedWindows>,
 }
 
 impl Engine {
@@ -75,6 +79,7 @@ impl Engine {
         conn: Connection,
         tx: UnboundedSender<Command>,
         shared: Arc<Mutex<Shared>>,
+        windows: Option<SharedWindows>,
     ) -> Self {
         Self {
             config,
@@ -88,6 +93,7 @@ impl Engine {
             router: None,
             reply: None,
             generation: 0,
+            windows,
         }
     }
 
@@ -159,6 +165,11 @@ impl Engine {
                 }
             }
             Command::Cancel => self.stop_listening().await?,
+            Command::WindowFocused(title) => {
+                if let Some(s) = &self.speaker {
+                    s.prefetch(&title);
+                }
+            }
             Command::Quit => {} // handled in run()
             Command::Ask(text) => {
                 self.transcript("user", &text, true).await?;
@@ -293,7 +304,9 @@ impl Engine {
 
     fn router(&mut self) -> anyhow::Result<Arc<Router>> {
         if self.router.is_none() {
-            self.router = Some(Arc::new(Router::from_config(&self.config)?));
+            let mut router = Router::from_config(&self.config)?;
+            router.windows = self.windows.clone();
+            self.router = Some(Arc::new(router));
         }
         Ok(self.router.clone().unwrap())
     }

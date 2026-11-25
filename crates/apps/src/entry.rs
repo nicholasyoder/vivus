@@ -21,6 +21,8 @@ pub struct App {
     /// Working directory.
     pub path: Option<PathBuf>,
     pub terminal: bool,
+    /// X11 `WM_CLASS`; some apps also use it as their Wayland app ID.
+    pub startup_wm_class: Option<String>,
     pub file: PathBuf,
 }
 
@@ -119,6 +121,7 @@ pub fn parse(
         icon: get("Icon"),
         path: get("Path").filter(|p| !p.is_empty()).map(PathBuf::from),
         terminal: flag("Terminal"),
+        startup_wm_class: get("StartupWMClass").filter(|c| !c.is_empty()),
         file,
     })
 }

@@ -1,7 +1,7 @@
 # Desktop control
 
-Acting on the desktop through standard interfaces: launching apps, and later
-windows and the clipboard. Phase 2's in-app control is in
+Acting on the desktop through standard interfaces: launching apps and
+managing windows, and later the clipboard. Phase 2's in-app control is in
 [screen-awareness.md](screen-awareness.md).
 
 ## App launching
@@ -57,3 +57,60 @@ app. Biome issues the token. If there's no token, the app launches anyway.
 
 Try matching without the daemon:
 `cargo run -p vivus-apps --example find -- my browser` (add `--launch` to start it).
+
+## Windows
+
+The router has a `window(action, window?)` tool: `switch`, `close` or
+`minimize`. As with `launch_app`, the model passes the window as the user said
+it, and the daemon does the matching.
+
+**Backend** (`crates/wayland/src/windows.rs`). This sits behind
+`vivus_core::WindowBackend`, so a custom-protocol backend can replace it. One
+Wayland connection stays open on the `vivus-wayland` thread. It keeps the list
+current from `done` events. `wlr-foreign-toplevel-management` (v1-3) gives
+title, app ID, state (active, minimized, maximized, fullscreen) and the
+actions. Activating a minimized window unminimizes it first. If that protocol
+is missing, `ext-foreign-toplevel-list-v1` gives a read-only list with no
+active window. The two are never paired: neither protocol links its handles to
+the other's, and matching them by creation order (as Forest's panel does)
+depends on how the compositor behaves. The list is ordered by our own focus
+clock: the active window first, then by when each window last gained focus.
+Windows that were already open at startup count as least recent.
+
+**Matching** (`crates/daemon/src/windows.rs`). An empty `window`, or one made
+only of words like "this", "it" or "current window", means the active window.
+Otherwise each window is scored, and the highest of these counts:
+
+- 1.0 if `Apps::find` resolves the query to this window's app. This covers
+  generic names ("my file manager") and misheard app names.
+- The app's display name, scored by `vivus_apps::name_score` (the app-matching
+  rules).
+- The app ID's last part × 0.95.
+- The title × 0.9.
+
+A window is found from 0.6 up, and windows within 0.05 of the best are a tie.
+For a tie, `switch` takes the most recent window that isn't active, as long as
+all the tied windows belong to one app ("switch to Firefox" from a Firefox
+window). `close` and `minimize` take the active window if it's tied, and
+otherwise ask. A window is found by its desktop entry: the desktop ID, then
+`StartupWMClass`, then the ID's last component. The sidebar (`vivus-sidebar`)
+is left out.
+
+**Silent actions.** A window that switches, closes or minimizes is feedback
+enough, so a successful call says nothing and needs no second LLM call. All of
+these took 0.5-1 s end to end on Biome. Misses and ties go back to the model as
+tool results. A miss on `switch` suggests `launch_app`.
+
+**Context.** Each router request gets the open windows in its system prompt,
+up to 15, as `App: "title"` with active/minimized flags. Titles are cut to 80
+characters and marked as data, never instructions. This lets the model answer
+"what windows do I have open?" and pick the window for "switch to the one with
+the weather".
+
+**Pronunciations.** When a window gains focus, its title goes to the
+pronunciation prefetch (only titles that gain focus, so a terminal that
+retitles itself on every command doesn't flood the lookups).
+
+Try it without the daemon: `cargo run -p vivus-wayland --example windows`
+lists the windows and watches focus for 5 s, and
+`-- <activate|close|minimize> <id>` acts on one.

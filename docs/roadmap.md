@@ -42,7 +42,7 @@ everyday use work comes first, then smarter answers, then polish.
 ### 1c: Basic desktop control
 
 - [x] App launching: parse `.desktop` files, fuzzy-match the spoken name, launch with an `xdg-activation` token (2026-11-24, `f240169`) — [desktop-control.md](desktop-control.md#app-launching)
-- [ ] Windows: list with `ext-foreign-toplevel-list-v1`; switch/close/minimize with `wlr-foreign-toplevel-management`; active window as context (`vivus-wayland`); prefetch pronunciations of window titles
+- [x] Windows: list, switch/close/minimize with `wlr-foreign-toplevel-management` (read-only `ext-foreign-toplevel-list-v1` fallback); open windows as router context; prefetch focused titles (2026-11-24, HASH) — [desktop-control.md](desktop-control.md#windows)
 - [ ] Push-to-talk and toggle-listen through the `GlobalShortcuts` portal (`vivusctl` stays the fallback)
 - [ ] Clipboard read/write via `wlr-data-control`
 
@@ -127,6 +127,7 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 - Sidebar uses Qt Widgets + QSS, not QML, so Forest's QSS themes can style it (2026-11-20).
 - Speech (VAD/STT/TTS) is local by default; LLM roles are remote by default (2026-11-23).
+- Windows come from wlr-foreign-toplevel alone, falling back to ext-foreign-toplevel-list; the two are never paired, since neither protocol links its handles to the other's (2026-11-24).
 - The mic stays open while the daemon runs (`keep_mic_open`, audio dropped until listening), not a WirePlumber no-suspend rule: works with no setup; the mic-in-use indicator stays on (2026-11-24).
 - STT always uses the echo-cancelled signal, never the raw mic: the raw mic transcribes music slightly better but would hear podcasts, videos and lyrics as the user (2026-11-24).
 - STT interface streams partials and finals; local default is `parakeet-tdt-110m` (2026-11-23).

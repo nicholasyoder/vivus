@@ -5,6 +5,7 @@ mod router;
 mod service;
 mod speaker;
 mod voice;
+mod windows;
 
 use std::sync::{Arc, Mutex};
 
@@ -60,7 +61,15 @@ async fn main() -> anyhow::Result<()> {
         let _ = speaker_tx.send(Command::SpeakerReady(Box::new(speaker)));
     });
 
-    let engine = tokio::spawn(Engine::new(config, conn, tx, shared).run(rx));
+    let focus_tx = tx.clone();
+    let windows = vivus_wayland::Windows::connect(Box::new(move |w| {
+        let _ = focus_tx.send(Command::WindowFocused(w.title.clone()));
+    }))
+    .inspect_err(|e| tracing::warn!("window control unavailable: {e:#}"))
+    .ok()
+    .map(|w| Arc::new(w) as windows::SharedWindows);
+
+    let engine = tokio::spawn(Engine::new(config, conn, tx, shared, windows).run(rx));
 
     let mut sigterm = signal(SignalKind::terminate())?;
     tokio::select! {

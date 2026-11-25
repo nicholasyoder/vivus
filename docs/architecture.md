@@ -52,7 +52,7 @@ crates/
   speech/      sherpa-onnx VAD, STT (later TTS); utterance listener
   inference/   LLM provider clients (OpenAI-compatible streaming)
   apps/        desktop entries, spoken-name matching, app launching
-  wayland/     standard-protocol compositor backend (xdg-activation so far)
+  wayland/     standard-protocol compositor backend (xdg-activation, foreign-toplevel windows)
 sidebar/       CMake + Qt6 Widgets project; data/sidebar.qss is the default style
 dbus/          D-Bus interface XML: the contract shared with every UI
 protocol/      custom Wayland protocols (Phase 2)

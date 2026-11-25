@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub use entry::App;
-pub use find::Match;
+pub use find::{Match, name_score};
 pub use launch::launch;
 
 /// The visible applications, in XDG precedence order.
@@ -81,6 +81,28 @@ impl Apps {
 
     pub fn get(&self, id: &str) -> Option<&App> {
         self.apps.iter().find(|a| a.id == id)
+    }
+
+    /// The app a window belongs to, from its Wayland app ID: the desktop ID,
+    /// else `StartupWMClass`, else the ID's last component (`nautilus`).
+    pub fn for_app_id(&self, app_id: &str) -> Option<&App> {
+        if app_id.is_empty() {
+            return None;
+        }
+        let eq = |s: &str| s.eq_ignore_ascii_case(app_id);
+        self.apps
+            .iter()
+            .find(|a| eq(a.app_id()))
+            .or_else(|| {
+                self.apps
+                    .iter()
+                    .find(|a| a.startup_wm_class.as_deref().is_some_and(eq))
+            })
+            .or_else(|| {
+                self.apps
+                    .iter()
+                    .find(|a| a.app_id().rsplit('.').next().is_some_and(eq))
+            })
     }
 
     /// The default handler for a MIME type: `mimeapps.list`, else the first app

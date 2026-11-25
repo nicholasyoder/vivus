@@ -145,6 +145,22 @@ impl Apps {
     }
 }
 
+/// How well a name or title fits a spoken query, 0 to 1, with the same rules
+/// as app matching (filler words dropped, spaces ignored, edit distance).
+pub fn name_score(field: &str, query: &str) -> f32 {
+    let words = words(query);
+    let words: Vec<&str> = words
+        .iter()
+        .map(String::as_str)
+        .filter(|w| !FILLER.contains(w))
+        .collect();
+    let compact = words.concat();
+    if compact.is_empty() {
+        return 0.0;
+    }
+    field_score(field, &words, &compact)
+}
+
 fn words(s: &str) -> Vec<String> {
     s.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())

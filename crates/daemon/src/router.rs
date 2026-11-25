@@ -9,14 +9,16 @@ use std::time::Instant;
 use anyhow::{Context, bail};
 use serde::Deserialize;
 use serde_json::json;
+use vivus_apps::Apps;
 use vivus_core::config::Provider;
-use vivus_core::{Config, Document};
+use vivus_core::{Config, Document, WindowAction, WindowBackend};
 use vivus_inference::{
     ChatRequest, ClaudeCode, ClaudeEvent, ClaudeRequest, Client, Event, Message, Tool, ToolCall,
     ToolChoice,
 };
 
 use crate::engine::Shared;
+use crate::windows::{self, SharedWindows};
 
 /// Groq's free tier rejects requests asking for more than 1000 output tokens per minute.
 const MAX_TOKENS: u32 = 1000;
@@ -37,6 +39,9 @@ before calling it. Never call `show` without saying something first.
 - To open an app, call `launch_app` with its name as the user said it (\"my \
 browser\" is fine) and say nothing: Vivus announces it. If several apps match, \
 ask the user which one they mean.
+- To switch to, close or minimize an open window, call `window` and say nothing. \
+\"This\" or \"it\" means the active window: omit `window`. To switch to an app that \
+isn't open, call `launch_app`.
 - If the request needs current information, research, more care than a quick \
 answer, or actions on the computer you have no tool for, first say a short filler \
 line (\"Let me look into that.\"), then call `escalate`. Role `answer` is for \
@@ -52,6 +57,8 @@ Assistant: I've put a weekend hiking packing list in the sidebar. \
 [calls show with title \"Weekend hike packing list\" and the list as markdown]
 User: open my browser
 Assistant: [calls launch_app with name \"browser\"]
+User: close this
+Assistant: [calls window with action \"close\"]
 User: what's the latest news about AI
 Assistant: Let me look that up. [calls escalate with role \"answer\"]
 User: compare the three best-reviewed budget mechanical keyboards
@@ -125,6 +132,8 @@ pub struct Router {
     fillers: AtomicUsize,
     /// `launch_app`; replaced in tests.
     launcher: Launcher,
+    /// `None` without a compositor that lists windows.
+    pub windows: Option<SharedWindows>,
 }
 
 /// Starts the app named; its display name, or the tool result to answer.
@@ -151,6 +160,7 @@ impl Router {
             agent: None,
             fillers: AtomicUsize::new(0),
             launcher: crate::apps::launch_app,
+            windows: None,
         }
     }
 
@@ -195,14 +205,23 @@ impl Router {
             shown: false,
             start,
             launcher: self.launcher,
+            windows: self.windows.as_deref(),
+            acted: false,
         };
-        let messages = vec![Message::System(SYSTEM.into()), Message::User(text.into())];
+        let mut system = SYSTEM.to_owned();
+        if let Some(windows) = &self.windows
+            && let Some(ctx) = windows::context(&windows::open(&**windows), &Apps::load())
+        {
+            system.push_str("\n\n");
+            system.push_str(&ctx);
+        }
+        let messages = vec![Message::System(system), Message::User(text.into())];
         let result = match self
             .converse(
                 &self.client,
                 &self.model,
                 messages,
-                tools(),
+                tools(self.windows.is_some()),
                 Some(MAX_TOKENS),
                 &mut turn,
             )
@@ -216,7 +235,7 @@ impl Router {
             tracing::error!("reply: {e:#}");
             turn.say_sentence("Sorry, I couldn't reach the language model.");
         }
-        if !turn.answered {
+        if !turn.answered && !turn.acted {
             // Models sometimes call `show` and say nothing despite the prompt.
             turn.say_sentence(if turn.shown {
                 "I've put that in the sidebar."
@@ -297,8 +316,8 @@ impl Router {
             if escalation.is_some() {
                 return Ok(escalation);
             }
-            // Tools may have spoken (`launch_app` announces itself).
-            if !follow_up && turn.answered {
+            // Tools may have spoken (`launch_app` announces itself) or acted silently.
+            if !follow_up && (turn.answered || turn.acted) {
                 return Ok(None);
             }
         }
@@ -385,6 +404,9 @@ struct Turn<'a> {
     shown: bool,
     start: Instant,
     launcher: Launcher,
+    windows: Option<&'a dyn WindowBackend>,
+    /// A silent tool (`window`) did what was asked; nothing needs saying.
+    acted: bool,
 }
 
 #[derive(Deserialize)]
@@ -401,6 +423,13 @@ struct ShowArgs {
 #[derive(Deserialize)]
 struct LaunchArgs {
     name: String,
+}
+
+#[derive(Deserialize)]
+struct WindowArgs {
+    action: String,
+    #[serde(default)]
+    window: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -462,7 +491,7 @@ impl Turn<'_> {
         }
     }
 
-    /// Runs a `show`, `launch_app` (or unknown) tool call; returns its result and whether
+    /// Runs a `show`, `launch_app`, `window` (or unknown) tool call; returns its result and whether
     /// the model must answer it.
     fn tool(&mut self, call: &ToolCall) -> (String, bool) {
         tracing::info!("tool {} {}", call.name, call.arguments);
@@ -485,6 +514,25 @@ impl Turn<'_> {
                     Err(result) => (result, true),
                 },
                 Err(e) => (format!("Invalid arguments: {e}"), true),
+            },
+            "window" => match (call.parse_args::<WindowArgs>(), self.windows) {
+                (Ok(args), Some(backend)) => {
+                    let action = match args.action.as_str() {
+                        "switch" => WindowAction::Activate,
+                        "close" => WindowAction::Close,
+                        "minimize" => WindowAction::Minimize,
+                        other => return (format!("Unknown action `{other}`."), true),
+                    };
+                    match windows::act(backend, &Apps::load(), action, args.window.as_deref()) {
+                        Ok(result) => {
+                            self.acted = true;
+                            (result, false)
+                        }
+                        Err(result) => (result, true),
+                    }
+                }
+                (Err(e), _) => (format!("Invalid arguments: {e}"), true),
+                (_, None) => ("Window control isn't available.".into(), true),
             },
             other => (format!("Unknown tool `{other}`."), true),
         }
@@ -561,8 +609,8 @@ fn show_tool() -> Tool {
     }
 }
 
-fn tools() -> Vec<Tool> {
-    vec![
+fn tools(windows: bool) -> Vec<Tool> {
+    let mut tools = vec![
         show_tool(),
         Tool {
             name: "launch_app".into(),
@@ -591,7 +639,25 @@ fn tools() -> Vec<Tool> {
                 "required": ["role", "task"]
             }),
         },
-    ]
+    ];
+    if windows {
+        tools.push(Tool {
+            name: "window".into(),
+            description: "Switch to, close or minimize an open window. `window` is the \
+                          app name or title words as the user said them; omit it for \
+                          the active window (\"close this\")."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["switch", "close", "minimize"]},
+                    "window": {"type": "string"}
+                },
+                "required": ["action"]
+            }),
+        });
+    }
+    tools
 }
 
 #[cfg(test)]
@@ -738,6 +804,44 @@ mod tests {
         assert_eq!(requests.lock().unwrap().len(), 1);
     }
 
+    struct OneWindow(Mutex<Vec<WindowAction>>);
+
+    impl WindowBackend for OneWindow {
+        fn windows(&self) -> Vec<vivus_core::Window> {
+            vec![vivus_core::Window {
+                id: 7,
+                title: "Inbox".into(),
+                app_id: "thunderbird".into(),
+                active: Some(true),
+                ..Default::default()
+            }]
+        }
+        fn act(&self, id: u64, action: WindowAction) -> Result<(), vivus_core::WindowError> {
+            assert_eq!(id, 7);
+            self.0.lock().unwrap().push(action);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn window_actions_are_silent_and_windows_are_context() {
+        let (mut router, requests) =
+            serve(vec![vec![call("window", json!({"action":"close"}))]]).await;
+        let backend = Arc::new(OneWindow(Mutex::new(Vec::new())));
+        router.windows = Some(backend.clone());
+        let shared = Mutex::new(Shared::default());
+        let events = respond(&router, &shared).await;
+        assert_eq!(spoken(&events), "");
+        assert_eq!(*backend.0.lock().unwrap(), [WindowAction::Close]);
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(
+            requests[0].contains("thunderbird: \\\"Inbox\\\" (active)"),
+            "{}",
+            requests[0]
+        );
+    }
+
     #[tokio::test]
     async fn failed_launch_is_answered_by_the_model() {
         let (mut router, requests) = serve(vec![
@@ -878,6 +982,8 @@ mod tests {
             shown: false,
             start: Instant::now(),
             launcher: |_| unreachable!(),
+            windows: None,
+            acted: false,
         };
         turn.deliver("- a\n- b\n\nmore", "List things");
         assert!(!turn.answered);
