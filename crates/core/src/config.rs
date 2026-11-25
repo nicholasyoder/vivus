@@ -47,6 +47,8 @@ pub struct Config {
     #[serde(default)]
     pub audio: Audio,
     #[serde(default)]
+    pub conversation: Conversation,
+    #[serde(default)]
     pub shortcuts: Shortcuts,
     #[serde(default)]
     pub debug: Debug,
@@ -119,6 +121,25 @@ impl Default for Audio {
             duck_volume: 0.3,
             speech_volume: 1.0,
             record_utterances: false,
+        }
+    }
+}
+
+/// The rolling history sent with each request so follow-ups work.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Conversation {
+    /// Earlier exchanges (request and reply) sent with each request; 0 turns history off.
+    pub max_turns: usize,
+    /// Start a fresh conversation after this long without a request.
+    pub forget_after_minutes: f32,
+}
+
+impl Default for Conversation {
+    fn default() -> Self {
+        Self {
+            max_turns: 10,
+            forget_after_minutes: 10.0,
         }
     }
 }

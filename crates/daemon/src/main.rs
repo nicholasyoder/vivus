@@ -1,6 +1,7 @@
 mod apps;
 mod choices;
 mod clipboard;
+mod conversation;
 mod engine;
 mod keyring;
 mod pronounce;

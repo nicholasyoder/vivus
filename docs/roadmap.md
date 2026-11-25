@@ -61,9 +61,10 @@ everyday use work comes first, then smarter answers, then polish.
 
 ### 1e: Smarter answers
 
-- [ ] Conversation memory: rolling history so follow-ups work
+- [x] Conversation memory: rolling history so follow-ups work; sliding window bounded by turns, characters and idle time (2026-11-25, `HASH`) — [inference.md](inference.md#conversation-memory)
 - [ ] Context providers: time/date, locale, active window, clipboard — [architecture.md](architecture.md#daemon-internals)
 - [ ] `web_search` and `fetch_url` with a configurable provider; sourced sidebar documents — [inference.md](inference.md#web-access)
+- [ ] Rate limits: retry a 429 that asks for a short wait (Groq's free tier says "try again in 2 s") instead of apologising
 - [ ] Long escalations: `thinking` state after the filler, a spoken progress line for agent runs past ~15 s — [inference.md](inference.md#escalation)
 
 ### 1f: Polish
@@ -118,11 +119,12 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 - Wake word as well as push-to-talk? Probably later and optional.
 - Should the router have a small local fallback for offline use? (Speech is already local.)
-- How much conversation and sidebar history to keep, and where (documents are in memory only today).
+- How much sidebar history to keep, and where (documents and conversation are in memory only today).
 - Which actions need spoken or visual confirmation, and how to keep screen or web text from triggering actions (treat it as data; confirm what it suggests).
 
 ## Decided
 
+- Conversation memory is a sliding window of recent exchanges (turns, character budget, idle reset), not summarization or retrieval; documents enter the prompt as a list plus the newest one's text (2026-11-25).
 - `[providers]` holds only API providers (added from Settings, with presets); local speech (`[speech]`, the unset stt/tts provider) and Claude Code (`[claude_code]`, provider `claude-code`) are always there and aren't listed (2026-11-25).
 - API keys never go in `config.toml`, and they're managed from the settings window rather than by hand-editing `.env` (2026-11-25).
 - API keys are stored in the Secret Service (keyring), falling back to a daemon-written `~/.config/vivus/.env` (0600) when no keyring is running (2026-11-25).

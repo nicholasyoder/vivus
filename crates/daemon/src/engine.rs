@@ -19,6 +19,7 @@ use zbus::Connection;
 
 use crate::choices::{self, ModelCache};
 use crate::clipboard::SharedClipboard;
+use crate::conversation::{Exchange, History};
 use crate::keyring;
 use crate::router::{ReplyEvent, Router};
 use crate::service;
@@ -152,6 +153,8 @@ struct Reply {
     text: String,
     /// TTS has been given text, so `SpeakingFinished` will follow `end()`.
     speaking: bool,
+    /// The request and what the reply has done so far; `None` for a fixed line.
+    exchange: Option<Exchange>,
 }
 
 pub struct Engine {
@@ -168,6 +171,7 @@ pub struct Engine {
     mic_paused: bool,
     /// Built on first use and kept, so its HTTP connection is reused.
     router: Option<Arc<Router>>,
+    history: History,
     reply: Option<Reply>,
     generation: u64,
     windows: Option<SharedWindows>,
@@ -211,6 +215,7 @@ impl Engine {
             listen_mode: None,
             mic_paused: false,
             router: None,
+            history: History::default(),
             reply: None,
             generation: 0,
             windows,
@@ -673,10 +678,19 @@ impl Engine {
         };
         self.generation += 1;
         let generation = self.generation;
+        let conv = &self.config.conversation;
+        let history = self.history.recent(
+            conv.max_turns,
+            Duration::from_secs_f32(conv.forget_after_minutes.max(0.0) * 60.0),
+        );
         let (tx, shared, text) = (self.tx.clone(), self.shared.clone(), text.to_owned());
+        let exchange = Exchange {
+            user: text.clone(),
+            ..Default::default()
+        };
         let task = tokio::spawn(async move {
             router
-                .respond(&text, &shared, |event| {
+                .respond(&text, &history, &shared, |event| {
                     let _ = tx.send(Command::Reply { generation, event });
                 })
                 .await;
@@ -686,6 +700,7 @@ impl Engine {
             task: Some(task.abort_handle()),
             text: String::new(),
             speaking: false,
+            exchange: Some(exchange),
         });
         Ok(())
     }
@@ -910,7 +925,15 @@ impl Engine {
                     speaker.flush();
                 }
             }
+            ReplyEvent::Acted(result) => {
+                if let Some(ex) = &mut self.reply.as_mut().unwrap().exchange {
+                    ex.actions.push(result);
+                }
+            }
             ReplyEvent::Document(doc) => {
+                if let Some(ex) = &mut self.reply.as_mut().unwrap().exchange {
+                    ex.documents.push(doc.id.clone());
+                }
                 self.document_changed(&doc).await?;
                 self.request_sidebar("show").await?;
             }
@@ -918,6 +941,10 @@ impl Engine {
                 let reply = self.reply.take().unwrap();
                 self.transcript("assistant", reply.text.trim(), true)
                     .await?;
+                if let Some(mut ex) = reply.exchange {
+                    ex.reply = reply.text.trim().to_owned();
+                    self.history.push(ex);
+                }
                 match &self.speaker {
                     Some(speaker) if reply.speaking => speaker.end(),
                     _ => self.after_reply().await?,
@@ -936,6 +963,7 @@ impl Engine {
             task: None,
             text: String::new(),
             speaking: false,
+            exchange: None,
         });
         self.on_reply(ReplyEvent::Text(line.into())).await?;
         self.on_reply(ReplyEvent::Done).await
@@ -962,9 +990,22 @@ impl Engine {
     }
 
     /// Drops the reply in progress: the LLM request closes and TTS goes quiet.
+    /// The history notes it was cut off.
     fn cancel_reply(&mut self) {
-        if let Some(task) = self.reply.take().and_then(|r| r.task) {
-            task.abort();
+        match self.reply.take() {
+            Some(reply) => {
+                if let Some(task) = reply.task {
+                    task.abort();
+                }
+                if let Some(mut ex) = reply.exchange {
+                    ex.reply = reply.text.trim().to_owned();
+                    ex.interrupted = true;
+                    self.history.push(ex);
+                }
+            }
+            // Finished generating but still being spoken.
+            None if self.state() == AssistantState::Speaking => self.history.interrupt_last(),
+            None => {}
         }
         if let Some(s) = &self.speaker {
             s.stop();

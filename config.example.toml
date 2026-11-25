@@ -86,6 +86,13 @@ speech_volume = 1.0
 # ~/.local/share/vivus/recordings, with transcripts.tsv. For debugging accuracy.
 record_utterances = false
 
+# Follow-ups ("what about tomorrow?", "add milk to that list") need the
+# conversation so far. Only the last max_turns exchanges are sent, shortened to
+# fit a fixed budget, and the conversation starts over after a quiet spell.
+[conversation]
+max_turns = 10
+forget_after_minutes = 10
+
 # Global shortcuts, requested from the desktop's GlobalShortcuts portal at
 # startup (shortcuts-spec format). "" leaves one unbound. On desktops whose
 # portal asks you to confirm or pick keys, these are only suggestions. Without

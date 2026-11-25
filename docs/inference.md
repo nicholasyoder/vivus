@@ -125,8 +125,9 @@ follow-up's content, or say a canned line ("I've put that in the sidebar").
   that in the sidebar" after a `show`, else an apology. Provider errors are
   spoken as "couldn't reach the language model".
 - `escalate` ends the router's call; see [Escalation](#escalation).
-- `max_tokens = 1000` (Groq free tier limit). No conversation history or
-  context (time, active window) yet; those are their own roadmap items.
+- `max_tokens = 1000` (Groq free tier limit). Earlier exchanges come from
+  [Conversation memory](#conversation-memory); other context (time, locale)
+  is its own roadmap item.
 
 ### Live run (2026-11-24, Groq `openai/gpt-oss-20b`, Kokoro)
 
@@ -182,6 +183,48 @@ on nano-gpt, `agent` Claude Code with its default model):
   `model = "sonnet"` (or similar) on `[roles.agent]`.
 - The state stays `speaking` from the filler until the escalated reply ends,
   and a long agent run is silent after the filler.
+
+## Conversation memory
+
+Follow-ups ("and its population?", "add a stove to that list") need the
+conversation so far. Options considered:
+
+- **Whole session**: simplest, but the prompt grows without bound, every
+  request gets slower and dearer, and Groq's free tier (8000 tokens per minute)
+  runs out within a few requests.
+- **Summarize older turns** with an extra LLM call: keeps long-range context,
+  but adds a call, latency or background work, and a failure mode. Not needed
+  for voice, where follow-ups refer to the last few exchanges.
+- **Retrieval** over past conversations: long-term memory, a different feature.
+- **Sliding window** (chosen): the last few exchanges, bounded three ways.
+
+Implementation (`crates/daemon/src/conversation.rs`):
+
+- An `Exchange` is the request, the reply text, silent actions' results
+  ("Closed Firefox.", via `ReplyEvent::Acted`), the sidebar documents it
+  touched, and whether it was interrupted. The engine records one when a reply
+  ends or is cancelled (barge-in, `Cancel`), with the text generated so far;
+  talking over a reply that's still being spoken marks it interrupted too.
+- Sent as plain user/assistant turns: spoken text only, no replayed tool
+  calls (no tool-call ids to keep valid, no tool names the escalated roles
+  don't have, nothing for the model to imitate aloud). A silent reply's
+  content is its actions' results; an interrupted one ends in "… (interrupted)".
+- Documents go in the system prompt instead: the conversation's last five by id
+  and title (so `show` can append to one), plus the newest one's text, cut to
+  1500 characters, so "what's the third item?" works.
+- Bounds: `[conversation] max_turns` (10) exchanges; 4000 characters of request
+  and reply text in all (about 1000 tokens), dropping the oldest first; and a
+  fresh conversation after `forget_after_minutes` (10) without a request.
+- `answer` gets the same turns and document section; Claude Code gets them as
+  a transcript at the top of its prompt.
+- History lives in the daemon's memory only; a restart forgets it.
+
+Live run (2026-11-25, gpt-oss-120b on Groq): "packing list for a weekend hike"
+then "add a camping stove to it" appended to the same document (`document_id`);
+"capital of Peru" then "how many people live there?" answered for Lima. Seven
+requests in a minute then hit Groq's free-tier 8000 TPM limit (each request was
+about 2000 tokens with the tools and window list), spoken as "couldn't reach
+the language model"; the history budget was halved to 4000 characters after it.
 
 ## Web access
 

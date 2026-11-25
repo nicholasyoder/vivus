@@ -77,7 +77,7 @@ sidebar (its proxy is generated from the XML by `qt_add_dbus_interface`).
 - **Engine.** D-Bus methods only enqueue `engine::Command`s; the engine task owns all behaviour so in-flight work can be cancelled. Every stage should be a cancellable task: interrupting cancels in-flight TTS, LLM streams and pending tool calls.
 - **Threads.** tokio for the engine and D-Bus; a `vivus-capture` thread runs the PipeWire loop; a `vivus-speech` thread runs the blocking sherpa-onnx work. Audio and control messages share one channel into the speech thread, so ordering holds (a push-to-talk release is processed after the audio before it). Details: [speech.md](speech.md).
 - **Context providers.** Small functions that supply per-request context: time and date, locale, active window (app ID, title), clipboard, later selected text, window text and gaze target. The router gets a compact summary; the agent can fetch full content through tools.
-- **Conversation memory.** A short rolling history so follow-ups work ("open it", "what about the second one?"). Sidebar documents are kept and can be referred back to.
+- **Conversation memory.** A short rolling history so follow-ups work ("open it", "what about the second one?"). Sidebar documents are kept and can be referred back to. See [inference.md](inference.md#conversation-memory).
 
 ## Compatibility (target)
 

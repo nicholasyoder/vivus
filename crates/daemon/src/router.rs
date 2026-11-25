@@ -18,6 +18,7 @@ use vivus_inference::{
 };
 
 use crate::clipboard::{self, SharedClipboard};
+use crate::conversation::{self, Exchange};
 use crate::engine::Shared;
 use crate::windows::{self, SharedWindows};
 
@@ -158,6 +159,8 @@ pub enum ReplyEvent {
     Document(Document),
     /// More text may be a while: speak what's buffered (e.g. the filler) now.
     Flush,
+    /// A silent action's result ("Closed Firefox."), for the history.
+    Acted(String),
     Done,
 }
 
@@ -202,10 +205,12 @@ impl Router {
         Ok(router)
     }
 
-    /// Answers one request. Dropping the future cancels the call in flight.
+    /// Answers one request, following on from `history`. Dropping the future
+    /// cancels the call in flight.
     pub async fn respond(
         &self,
         text: &str,
+        history: &[Exchange],
         shared: &Mutex<Shared>,
         emit: impl Fn(ReplyEvent) + Sync,
     ) {
@@ -229,7 +234,14 @@ impl Router {
             system.push_str("\n\n");
             system.push_str(&ctx);
         }
-        let messages = vec![Message::System(system), Message::User(text.into())];
+        let docs = conversation::documents_context(history, &shared.lock().unwrap().documents);
+        if let Some(docs) = &docs {
+            system.push_str("\n\n");
+            system.push_str(docs);
+        }
+        let mut messages = vec![Message::System(system)];
+        messages.extend(conversation::messages(history));
+        messages.push(Message::User(text.into()));
         let result = match self
             .converse(
                 &self.client,
@@ -241,7 +253,10 @@ impl Router {
             )
             .await
         {
-            Ok(Some(esc)) => self.escalate(text, esc, &mut turn).await,
+            Ok(Some(esc)) => {
+                self.escalate(text, history, docs.as_deref(), esc, &mut turn)
+                    .await
+            }
             Ok(None) => Ok(()),
             Err(e) => Err(e),
         };
@@ -343,6 +358,8 @@ impl Router {
     async fn escalate(
         &self,
         text: &str,
+        history: &[Exchange],
+        docs: Option<&str>,
         esc: EscalateArgs,
         turn: &mut Turn<'_>,
     ) -> anyhow::Result<()> {
@@ -370,17 +387,32 @@ impl Router {
         let prompt = format!("The user said: \"{text}\"\nTask: {}", esc.task);
         match backend {
             Backend::Chat { client, model } => {
-                let messages = vec![
-                    Message::System(ESCALATED_SYSTEM.into()),
-                    Message::User(prompt),
-                ];
+                let mut system = ESCALATED_SYSTEM.to_owned();
+                if let Some(docs) = docs {
+                    system.push_str("\n\n");
+                    system.push_str(docs);
+                }
+                let mut messages = vec![Message::System(system)];
+                messages.extend(conversation::messages(history));
+                messages.push(Message::User(prompt));
                 // No `escalate` here, so a call to it gets "unknown tool".
                 self.converse(client, model, messages, vec![show_tool()], None, turn)
                     .await?;
             }
             Backend::ClaudeCode { cc, model } => {
+                let mut context = String::new();
+                if !history.is_empty() {
+                    context = format!(
+                        "Earlier in this conversation:\n{}\n",
+                        conversation::transcript(history)
+                    );
+                }
+                if let Some(docs) = docs {
+                    context.push_str(docs);
+                    context.push_str("\n\n");
+                }
                 let req = ClaudeRequest {
-                    prompt,
+                    prompt: format!("{context}{prompt}"),
                     system: Some(CLAUDE_SYSTEM.into()),
                     model: model.clone(),
                 };
@@ -546,6 +578,7 @@ impl Turn<'_> {
                     match windows::act(backend, &Apps::load(), action, args.window.as_deref()) {
                         Ok(result) => {
                             self.acted = true;
+                            (self.emit)(ReplyEvent::Acted(result.clone()));
                             (result, false)
                         }
                         Err(result) => (result, true),
@@ -779,7 +812,7 @@ mod tests {
     async fn respond(router: &Router, shared: &Mutex<Shared>) -> Vec<ReplyEvent> {
         let events = Mutex::new(Vec::new());
         router
-            .respond("hi", shared, |e| events.lock().unwrap().push(e))
+            .respond("hi", &[], shared, |e| events.lock().unwrap().push(e))
             .await;
         events.into_inner().unwrap()
     }
@@ -821,6 +854,37 @@ mod tests {
         // Spoken and shown: no follow-up call.
         assert_eq!(requests.lock().unwrap().len(), 1);
         assert!(requests.lock().unwrap()[0].contains("\"max_tokens\":1000"));
+    }
+
+    #[tokio::test]
+    async fn history_and_documents_are_sent() {
+        let (router, requests) = serve(vec![vec![text("Added.")]]).await;
+        let shared = Mutex::new(Shared::default());
+        let id = shared
+            .lock()
+            .unwrap()
+            .documents
+            .create("Packing", "- tent")
+            .id
+            .clone();
+        let history = [Exchange {
+            user: "packing list".into(),
+            reply: "It's in the sidebar.".into(),
+            documents: vec![id],
+            ..Default::default()
+        }];
+        router
+            .respond("add a stove", &history, &shared, |_| {})
+            .await;
+
+        let body: serde_json::Value = serde_json::from_str(&requests.lock().unwrap()[0]).unwrap();
+        let msgs = body["messages"].as_array().unwrap();
+        let roles: Vec<_> = msgs.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, ["system", "user", "assistant", "user"]);
+        assert_eq!(msgs[2]["content"], "It's in the sidebar.");
+        assert_eq!(msgs[3]["content"], "add a stove");
+        let system = msgs[0]["content"].as_str().unwrap();
+        assert!(system.contains("- doc-1 \"Packing\"") && system.ends_with("- tent"));
     }
 
     #[tokio::test]
