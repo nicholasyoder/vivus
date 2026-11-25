@@ -97,6 +97,7 @@ Understand what's on screen and act inside apps. Design: [screen-awareness.md](s
 - [ ] Input injection (virtual keyboard/pointer or libei); needs Biome work
 - [ ] AT-SPI actions (press, fill in, menu paths), screenshot-and-click as fallback
 - [ ] `agent` role for multi-step tasks, with confirmation for destructive or outward-facing actions
+- [ ] Long-term memory: compact older turns into summaries and keep memory files / a searchable store the router can query; built and maintained while idle so replies aren't slowed — [inference.md](inference.md#conversation-memory)
 
 **Done when:** "what's this error?" works for a terminal, a browser and an IDE;
 "click Save", "type my email address here", "go to the next tab" work in common

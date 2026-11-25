@@ -219,6 +219,11 @@ Implementation (`crates/daemon/src/conversation.rs`):
   a transcript at the top of its prompt.
 - History lives in the daemon's memory only; a restart forgets it.
 
+Later (Phase 2): compaction of older turns into summaries, and long-term
+memory (files or a small database of facts and past conversations) that the
+router can search with a tool. The summarizing and indexing run while idle, so
+they never sit in front of a reply.
+
 Live run (2026-11-25, gpt-oss-120b on Groq): "packing list for a weekend hike"
 then "add a camping stove to it" appended to the same document (`document_id`);
 "capital of Peru" then "how many people live there?" answered for Lima. Seven
