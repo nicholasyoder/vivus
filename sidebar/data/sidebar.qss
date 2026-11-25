@@ -8,7 +8,7 @@
    #AnswerProvider, #AnswerModel, #AgentProvider, #AgentModel,
    #VisionProvider, #VisionModel; #TtsVoice; #Providers (group), per
    provider #ProviderUrl, #RemoveProviderButton, #ApiKey, #SaveApiKeyButton,
-   #RemoveApiKeyButton; #NewProviderName, #NewProviderUrl, #NewProviderKey,
+   #RemoveApiKeyButton; #NewProviderPreset, #NewProviderName, #NewProviderUrl, #NewProviderKey,
    #AddProviderButton.
    #VivusSidebar and #StateDot carry a `state` property:
    idle | listening | thinking | speaking | disconnected. */

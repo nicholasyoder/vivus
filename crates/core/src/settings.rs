@@ -6,7 +6,7 @@ use std::path::Path;
 use serde_json::Value as Json;
 use toml_edit::{DocumentMut, Item, Table, TableLike};
 
-use crate::config::{Config, ConfigError, is_builtin_provider};
+use crate::config::{Config, ConfigError};
 
 pub use toml_edit::{Array, InlineTable, Value};
 
@@ -39,15 +39,6 @@ pub fn edit(
         return Err(SettingsError::BadPath(path.into()));
     }
     let mut doc: DocumentMut = text.parse()?;
-    if let ["providers", name] = keys[..]
-        && value.is_none()
-        && is_builtin_provider(name)
-        && doc.get("providers").and_then(|p| p.get(name)).is_none()
-    {
-        return Err(SettingsError::Rejected(format!(
-            "`{name}` is built in and can't be removed"
-        )));
-    }
     let removing_provider = match keys[..] {
         ["providers", name] if value.is_none() => Some(name),
         _ => None,
@@ -216,15 +207,6 @@ echo_cancel = true
         ));
         let (text, config) = set(&text, "providers.mine", None).unwrap();
         assert!(!text.contains("mine") && !config.providers.contains_key("mine"));
-
-        assert!(matches!(
-            set(FILE, "providers.groq", None),
-            Err(SettingsError::Rejected(m)) if m.contains("built in")
-        ));
-        // An override of a built-in can go; the built-in comes back.
-        let text = "[providers.groq]\nkind = \"openai-compatible\"\nbase_url = \"http://x\"\n";
-        let (_, config) = set(text, "providers.groq", None).unwrap();
-        assert!(config.providers.contains_key("groq"));
     }
 
     #[test]

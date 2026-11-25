@@ -155,13 +155,31 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
                        addRole(QStringLiteral("agent"), tr("Multi-step work; uses the longer-answers model when unset")));
     modelsForm->addRow(tr("Vision"), addRole(QStringLiteral("vision"), tr("Not used yet: screen awareness comes later")));
 
-    // Providers: one row each for the openai-compatible ones, then a row to add one.
+    // Providers: one row each, then a row to add one (presets fill it in).
     m_keysGroup = new QGroupBox(tr("Providers"), m_form);
     m_keysGroup->setObjectName(QStringLiteral("Providers"));
     auto *providersLayout = new QVBoxLayout(m_keysGroup);
     m_keysForm = new QFormLayout;
     providersLayout->addLayout(m_keysForm);
 
+    m_newPreset = new QComboBox(m_keysGroup);
+    m_newPreset->setObjectName(QStringLiteral("NewProviderPreset"));
+    // Data: kind, name, base URL.
+    m_newPreset->addItem(tr("OpenAI-compatible"),
+                         QStringList{QStringLiteral("openai-compatible"), QString(), QString()});
+    m_newPreset->addItem(QStringLiteral("OpenAI"),
+                         QStringList{QStringLiteral("openai-compatible"), QStringLiteral("openai"),
+                                     QStringLiteral("https://api.openai.com/v1")});
+    m_newPreset->addItem(QStringLiteral("Groq"),
+                         QStringList{QStringLiteral("openai-compatible"), QStringLiteral("groq"),
+                                     QStringLiteral("https://api.groq.com/openai/v1")});
+    m_newPreset->addItem(QStringLiteral("NanoGPT"),
+                         QStringList{QStringLiteral("openai-compatible"), QStringLiteral("nano-gpt"),
+                                     QStringLiteral("https://nano-gpt.com/api/v1")});
+    m_newPreset->addItem(tr("Claude Code"),
+                         QStringList{QStringLiteral("claude-code"), QStringLiteral("claude-code"), QString()});
+    m_newPreset->setItemData(4, tr("Runs `claude -p` for longer answers and tasks; uses your Claude login"),
+                             Qt::ToolTipRole);
     m_newName = new QLineEdit(m_keysGroup);
     m_newName->setObjectName(QStringLiteral("NewProviderName"));
     m_newName->setPlaceholderText(tr("Name"));
@@ -177,14 +195,17 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
     m_addProvider = new QPushButton(tr("Add"), m_keysGroup);
     m_addProvider->setObjectName(QStringLiteral("AddProviderButton"));
     m_addProvider->setEnabled(false);
+    m_addProvider->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     auto *addTop = new QHBoxLayout;
+    addTop->addWidget(m_newPreset);
     addTop->addWidget(m_newName, 1);
-    addTop->addWidget(m_newUrl, 3);
     auto *addBottom = new QHBoxLayout;
     addBottom->addWidget(m_newKey, 1);
+    addBottom->addStretch(0); // keeps Add right-aligned when the key field is hidden
     addBottom->addWidget(m_addProvider);
     auto *addBox = new QVBoxLayout;
     addBox->addLayout(addTop);
+    addBox->addWidget(m_newUrl);
     addBox->addLayout(addBottom);
     auto *addForm = new QFormLayout;
     addForm->addRow(tr("Add provider"), addBox);
@@ -194,6 +215,7 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
         connect(edit, &QLineEdit::returnPressed, this, &SettingsWindow::addProvider);
     }
     connect(m_addProvider, &QPushButton::clicked, this, &SettingsWindow::addProvider);
+    connect(m_newPreset, &QComboBox::currentIndexChanged, this, &SettingsWindow::onPresetChanged);
 
     m_forms = {micForm, speechForm, modelsForm, m_keysForm, addForm};
     alignLabels();
@@ -330,13 +352,6 @@ void SettingsWindow::updateConnected()
     m_form->setEnabled(connected);
     if (connected) {
         m_status->hide();
-        m_settings->builtinProviders([this](const QStringList &names, const QString &error) {
-            if (!error.isEmpty() || names == m_builtins)
-                return;
-            m_builtins = names;
-            m_keys.clear(); // rebuild with the right Remove buttons
-            updateKeys();
-        });
         if (isVisible()) {
             m_settings->refresh();
             m_settings->meterInput();
@@ -679,19 +694,28 @@ void SettingsWindow::onVoiceActivated(RoleRow &row)
         m_settings->set(QStringLiteral("roles.tts.voice"), voice.toString());
 }
 
+static QString kindOf(const QJsonObject &providers, const QString &name)
+{
+    return providers.value(name).toObject().value(QLatin1String("kind")).toString();
+}
+
 // Rebuilt only when the set of providers changes, so a half-typed key survives other edits.
 void SettingsWindow::updateKeys()
 {
-    QStringList providers;
     const QJsonObject all = m_settings->value(QStringLiteral("providers")).toObject();
-    for (auto it = all.begin(); it != all.end(); ++it)
-        if (it.value().toObject().value(QLatin1String("kind")).toString() == QLatin1String("openai-compatible"))
-            providers << it.key();
+    const QStringList providers = all.keys();
+    QStringList keyed; // the ones that take a key
+    for (const auto &p : providers)
+        if (kindOf(all, p) == QLatin1String("openai-compatible"))
+            keyed << p;
 
-    QStringList shown;
-    for (const auto &k : m_keys)
+    QStringList shown, shownKeyed;
+    for (const auto &k : m_keys) {
         shown << k.provider;
-    if (providers != shown || m_keysForm->rowCount() != int(m_keys.size())) {
+        if (k.edit)
+            shownKeyed << k.provider;
+    }
+    if (providers != shown || keyed != shownKeyed) {
         while (m_keysForm->rowCount() > 0)
             m_keysForm->removeRow(0);
         m_keys.clear();
@@ -702,12 +726,24 @@ void SettingsWindow::updateKeys()
             row.url->setObjectName(QStringLiteral("ProviderUrl"));
             row.url->setTextInteractionFlags(Qt::TextSelectableByMouse);
             row.url->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-            if (!m_builtins.contains(provider)) {
-                row.removeProvider = new QPushButton(tr("Remove provider"), m_keysGroup);
-                row.removeProvider->setObjectName(QStringLiteral("RemoveProviderButton"));
-                connect(row.removeProvider, &QPushButton::clicked, this,
-                        [this, provider] { removeProvider(provider); });
+            row.removeProvider = new QPushButton(tr("Remove"), m_keysGroup);
+            row.removeProvider->setObjectName(QStringLiteral("RemoveProviderButton"));
+            row.removeProvider->setToolTip(tr("Remove this provider and its saved API key"));
+            connect(row.removeProvider, &QPushButton::clicked, this, [this, provider] { removeProvider(provider); });
+
+            auto *box = new QWidget(m_keysGroup);
+            auto *layout = new QVBoxLayout(box);
+            layout->setContentsMargins(0, 0, 0, 0);
+            auto *top = new QHBoxLayout;
+            top->addWidget(row.url, 1);
+            top->addWidget(row.removeProvider);
+            layout->addLayout(top);
+            m_keysForm->addRow(provider, box);
+            if (!keyed.contains(provider)) {
+                m_keys.push_back(row);
+                continue;
             }
+
             row.edit = new QLineEdit(m_keysGroup);
             row.edit->setObjectName(QStringLiteral("ApiKey"));
             row.edit->setEchoMode(QLineEdit::Password);
@@ -730,30 +766,27 @@ void SettingsWindow::updateKeys()
                     [save = row.save](const QString &t) { save->setEnabled(!t.trimmed().isEmpty()); });
             connect(row.remove, &QPushButton::clicked, this, [this, provider] { saveKey(provider, QString()); });
 
-            auto *box = new QWidget(m_keysGroup);
-            auto *layout = new QVBoxLayout(box);
-            layout->setContentsMargins(0, 0, 0, 0);
-            auto *top = new QHBoxLayout;
-            top->addWidget(row.url, 1);
-            if (row.removeProvider)
-                top->addWidget(row.removeProvider);
             auto *keyLine = new QHBoxLayout;
             keyLine->addWidget(row.edit, 1);
             keyLine->addWidget(row.save);
             keyLine->addWidget(row.remove);
-            layout->addLayout(top);
             layout->addLayout(keyLine);
-            m_keysForm->addRow(provider, box);
             m_keys.push_back(row);
         }
         alignLabels();
     }
     for (auto &row : m_keys) {
-        const QString url = all.value(row.provider).toObject().value(QLatin1String("base_url")).toString();
-        row.url->setText(url);
-        row.url->setToolTip(url);
+        const QJsonObject p = all.value(row.provider).toObject();
+        const QString kind = p.value(QLatin1String("kind")).toString();
+        QString text = p.value(QLatin1String("base_url")).toString();
+        if (kind == QLatin1String("claude-code"))
+            text = tr("Claude Code (%1 -p)").arg(p.value(QLatin1String("command")).toString());
+        else if (kind == QLatin1String("local-speech"))
+            text = tr("Local speech models");
+        row.url->setText(text);
+        row.url->setToolTip(text);
     }
-    for (const auto &provider : providers)
+    for (const auto &provider : keyed)
         updateKeyStatus(provider);
     updateAddProvider();
 }
@@ -796,13 +829,30 @@ static bool validProviderName(const QString &name)
     return re.match(name).hasMatch();
 }
 
+// Fills in the name (unless one was typed) and URL; Claude Code needs neither URL nor key.
+void SettingsWindow::onPresetChanged()
+{
+    const QStringList preset = m_newPreset->currentData().toStringList();
+    const bool claude = preset[0] == QLatin1String("claude-code");
+    if (m_newName->text().trimmed() == m_presetName)
+        m_newName->setText(preset[1]);
+    m_presetName = preset[1];
+    m_newUrl->setText(preset[2]);
+    m_newUrl->setVisible(!claude);
+    m_newKey->setVisible(!claude);
+    if (claude)
+        m_newKey->clear();
+    updateAddProvider();
+}
+
 void SettingsWindow::updateAddProvider()
 {
+    const bool claude = m_newPreset->currentData().toStringList().value(0) == QLatin1String("claude-code");
     const QString name = m_newName->text().trimmed();
     const QUrl url(m_newUrl->text().trimmed(), QUrl::StrictMode);
     const bool taken = m_settings->value(QStringLiteral("providers")).toObject().contains(name);
     const bool nameOk = validProviderName(name) && !taken;
-    const bool urlOk = url.isValid() && !url.host().isEmpty()
+    const bool urlOk = claude || url.isValid() && !url.host().isEmpty()
         && (url.scheme() == QLatin1String("https") || url.scheme() == QLatin1String("http"));
     m_newName->setToolTip(taken ? tr("There's already a provider called %1").arg(name)
                                 : tr("Letters, digits, - and _; roles refer to it by this name"));
@@ -816,17 +866,20 @@ void SettingsWindow::addProvider()
         return;
     const QString name = m_newName->text().trimmed();
     const QString key = m_newKey->text().trimmed();
-    const QVariantMap table{{QStringLiteral("kind"), QStringLiteral("openai-compatible")},
-                            {QStringLiteral("base_url"), m_newUrl->text().trimmed()}};
+    const QString kind = m_newPreset->currentData().toStringList().value(0);
+    QVariantMap table{{QStringLiteral("kind"), kind}};
+    if (kind == QLatin1String("openai-compatible"))
+        table.insert(QStringLiteral("base_url"), m_newUrl->text().trimmed());
     m_addProvider->setProperty("busy", true);
     m_addProvider->setEnabled(false);
     const auto finish = [this](const QString &what, const QString &error) {
         m_addProvider->setProperty("busy", false);
         if (error.isEmpty()) {
             m_status->hide();
-            m_newName->clear();
-            m_newUrl->clear();
             m_newKey->clear();
+            m_newName->clear();
+            m_newPreset->setCurrentIndex(0);
+            onPresetChanged();
         } else {
             showError(what, error);
         }
@@ -867,7 +920,7 @@ void SettingsWindow::updateKeyStatus(const QString &provider)
 {
     m_settings->apiKeyStatus(provider, [this, provider](const QString &status, const QString &error) {
         auto *row = findKey(provider);
-        if (!row)
+        if (!row || !row->edit)
             return;
         const QString var =
             keyVariable(provider, m_settings->value(QStringLiteral("providers.%1.api_key_env").arg(provider)));
@@ -902,7 +955,7 @@ void SettingsWindow::saveKey(const QString &provider, const QString &key)
     row->remove->setEnabled(false);
     m_settings->setApiKey(provider, key, [this, provider](const QString &error) {
         auto *row = findKey(provider);
-        if (!row)
+        if (!row || !row->edit)
             return;
         row->edit->setEnabled(true);
         if (error.isEmpty()) {

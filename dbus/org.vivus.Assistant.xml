@@ -64,13 +64,15 @@
     <method name="Get">
       <arg name="json" type="s" direction="out"/>
     </method>
-    <!-- Sets one key. A dictionary (a{sv}) is written as a whole table. An
+    <!-- Sets one key. A dictionary (a{sv}) is written as a whole table, e.g.
+         providers.<name> = {kind, base_url} adds a provider. An
          invalid path or value fails with the reason and leaves the file alone. -->
     <method name="Set">
       <arg name="path" type="s" direction="in"/>
       <arg name="value" type="v" direction="in"/>
     </method>
-    <!-- Removes a key from the file, so its default applies. -->
+    <!-- Removes a key from the file, so its default applies. Removing
+         providers.<name> also deletes its API key; refused while a role uses it. -->
     <method name="Reset">
       <arg name="path" type="s" direction="in"/>
     </method>
@@ -117,14 +119,6 @@
       <arg name="model" type="s" direction="in"/>
       <arg name="voices" type="a(ss)" direction="out"/>
       <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="ChoiceList"/>
-    </method>
-
-    <!-- Providers that exist without config (openai, groq, nano-gpt,
-         local-speech, claude-code). Set("providers.<name>", a{sv}) adds one or
-         overrides a built-in; Reset("providers.<name>") removes it (and its
-         key), and fails for a built-in that isn't overridden. -->
-    <method name="BuiltinProviders">
-      <arg name="names" type="as" direction="out"/>
     </method>
 
     <!-- Stores a provider's API key in the keyring (Secret Service), or in

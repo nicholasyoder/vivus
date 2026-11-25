@@ -52,8 +52,6 @@ public:
     // For when the caller reports failures itself (error() isn't emitted).
     void set(const QString &path, const QVariant &value, DoneReply done);
     void reset(const QString &path, DoneReply done);
-    // Providers that exist without config; they can't be removed.
-    void builtinProviders(ProvidersReply done);
 
 signals:
     void configChanged();

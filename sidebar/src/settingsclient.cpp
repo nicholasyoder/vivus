@@ -140,11 +140,6 @@ void SettingsClient::reset(const QString &path, DoneReply done)
     onDone(this, m_iface->Reset(path), std::move(done));
 }
 
-void SettingsClient::builtinProviders(ProvidersReply done)
-{
-    onReply<QStringList>(this, m_iface->BuiltinProviders(), std::move(done));
-}
-
 void SettingsClient::meterInput()
 {
     m_iface->MeterInput();

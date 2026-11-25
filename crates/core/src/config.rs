@@ -25,11 +25,10 @@ pub enum ConfigError {
     BadBaseUrl { provider: String, url: String },
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    /// The file's providers over the built-ins ([`builtin_providers`]).
-    #[serde(default = "builtin_providers", deserialize_with = "with_builtins")]
+    #[serde(default)]
     pub providers: BTreeMap<String, Provider>,
     #[serde(default)]
     pub roles: Roles,
@@ -39,58 +38,6 @@ pub struct Config {
     pub shortcuts: Shortcuts,
     #[serde(default)]
     pub debug: Debug,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            providers: builtin_providers(),
-            roles: Roles::default(),
-            audio: Audio::default(),
-            shortcuts: Shortcuts::default(),
-            debug: Debug::default(),
-        }
-    }
-}
-
-/// Providers that exist without any config. A file entry of the same name
-/// replaces one; without a key, a remote one costs nothing.
-pub fn builtin_providers() -> BTreeMap<String, Provider> {
-    let remote = |url: &str| Provider::OpenaiCompatible {
-        base_url: url.into(),
-        api_key_env: None,
-    };
-    BTreeMap::from([
-        ("openai".into(), remote("https://api.openai.com/v1")),
-        ("groq".into(), remote("https://api.groq.com/openai/v1")),
-        ("nano-gpt".into(), remote("https://nano-gpt.com/api/v1")),
-        (
-            "local-speech".into(),
-            Provider::LocalSpeech {
-                models_dir: None,
-                threads: default_speech_threads(),
-            },
-        ),
-        (
-            "claude-code".into(),
-            Provider::ClaudeCode {
-                command: default_claude_command(),
-                args: default_claude_args(),
-            },
-        ),
-    ])
-}
-
-pub fn is_builtin_provider(name: &str) -> bool {
-    builtin_providers().contains_key(name)
-}
-
-fn with_builtins<'de, D: serde::Deserializer<'de>>(
-    d: D,
-) -> Result<BTreeMap<String, Provider>, D::Error> {
-    let mut all = builtin_providers();
-    all.extend(BTreeMap::<String, Provider>::deserialize(d)?);
-    Ok(all)
 }
 
 /// Triggers requested from the `GlobalShortcuts` portal, in the shortcuts-spec
@@ -346,26 +293,6 @@ mod tests {
         let config: Config = toml::from_str(text).unwrap();
         config.validate().unwrap();
         assert!(config.roles.router.is_some());
-    }
-
-    #[test]
-    fn builtins_merge_under_file() {
-        let config = Config::parse(
-            "[providers.groq]\nkind = \"openai-compatible\"\nbase_url = \"http://x\"\n\
-             [roles.router]\nprovider = \"openai\"\n",
-            Path::new("c"),
-        )
-        .unwrap();
-        assert!(matches!(
-            &config.providers["groq"],
-            Provider::OpenaiCompatible { base_url, .. } if base_url == "http://x"
-        ));
-        assert!(config.providers.contains_key("nano-gpt"));
-        assert!(config.providers.contains_key("local-speech"));
-        assert_eq!(
-            Config::parse("", Path::new("c")).unwrap().providers.len(),
-            Config::default().providers.len()
-        );
     }
 
     #[test]

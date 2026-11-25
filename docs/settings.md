@@ -45,8 +45,7 @@ A new `org.vivus.Settings` interface on `/org/vivus` (contract first, as usual):
   [Roles and providers](#roles-and-providers)).
 - `SetApiKey(s provider, s key)`, `ApiKeyStatus(s provider) → s`: see
   [API keys](#api-keys).
-- `BuiltinProviders() → as`, and `Set` with a dictionary: see
-  [Providers](#providers).
+- `Set` with a dictionary adds a provider: see [Providers](#providers).
 
 As with `org.vivus.Assistant`, the methods only enqueue engine commands.
 `Set`/`Reset` carry a oneshot reply, so the call returns once the engine has
@@ -272,34 +271,37 @@ settings window sets them; nothing has to be edited by hand.
 
 ## Providers
 
-The window's Providers group lists each `openai-compatible` provider with its
-base URL and key field, then a row to add one. `local-speech` and
-`claude-code` have nothing to set there (their options stay in the file).
+Providers come only from the config file; there are no built-ins. A fresh
+install has none, and speech still works (unset `stt`/`tts` mean local
+speech); the LLM roles stay "None" until you add one. Built-in `openai`,
+`groq` and `nano-gpt` were tried and dropped (2026-11-25): rows for unused,
+keyless providers cluttered the window, and they needed merge, override and
+can't-remove rules. Presets in the Add row keep setup just as quick.
 
-- **Built-ins.** `openai` (`https://api.openai.com/v1`), `groq`
-  (`https://api.groq.com/openai/v1`), `nano-gpt`
-  (`https://nano-gpt.com/api/v1`), `local-speech` and `claude-code` exist
-  without any config, so a fresh config needs no `[providers]` table. They're
-  merged under the file's providers at deserialization
-  (`config::builtin_providers`), and a file entry with the same name replaces
-  one whole. `Get` returns them like any other. Their keys go by the derived
-  variable (`NANO_GPT_API_KEY`); a file entry can set `api_key_env`.
+The window's Providers group has a row per configured provider: its base URL
+(or "Claude Code (claude -p)", "Local speech models"), Remove, and for
+`openai-compatible` ones the key field (see [API keys](#api-keys)). Then the
+Add row.
+
+- **Presets.** The Add row's picker offers OpenAI-compatible (blank), OpenAI
+  (`https://api.openai.com/v1`), Groq (`https://api.groq.com/openai/v1`),
+  NanoGPT (`https://nano-gpt.com/api/v1`) and Claude Code. Choosing one fills
+  in the name (unless you typed one) and URL; Claude Code hides the URL and
+  key. The presets live in the sidebar only, as a typing aid.
 - **Names and URLs.** Provider names are letters, digits, `-` and `_` (they
   become TOML keys and `<NAME>_API_KEY`); `base_url` must be http(s). Both are
   checked in `Config::validate`, so a hand edit is held to the same rules.
+  Add stays disabled until the name is valid and unused and the URL is http(s).
 - **Adding.** A provider table needs `kind` and `base_url` in one step, so
   `Set` also takes a dictionary (`a{sv}`) and writes it as a whole `[table]`
   (replacing one there, `kind` first). The window sends
-  `Set("providers.<name>", {kind: "openai-compatible", base_url})`, then
-  `SetApiKey` if a key was typed. Its Add button stays disabled until the
-  name is valid and unused and the URL is http(s). From the shell:
+  `Set("providers.<name>", {kind, base_url})`, then `SetApiKey` if a key was
+  typed. From the shell:
   `vivusctl settings set providers.mine '{kind = "openai-compatible", base_url = "…"}'`.
 - **Removing** is `Reset("providers.<name>")`, behind a confirmation. It's
-  refused while a role uses the provider ("`mine` is used by the router role")
-  and for a built-in the file doesn't override; resetting an override brings
-  the built-in back. When the provider is really gone its key is deleted too
-  (keyring and `.env`); an override's removal keeps it. `BuiltinProviders()`
-  tells the window which rows get a Remove button.
+  refused while a role uses the provider ("`mine` is used by the router
+  role; choose another provider there first"). The provider's key is deleted
+  too (keyring and `.env`).
 - **Applying.** Any change under `providers.<name>` drops the router (rebuilt
   on the next turn) and that provider's `/models` cache entry.
 

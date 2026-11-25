@@ -724,9 +724,8 @@ impl Engine {
         choices::check_edit(&config, path)?;
         settings::write(&file, &text)?;
         self.config_file.text = text;
-        // A removed provider's key goes too (an override reverting to a built-in keeps it).
+        // A removed provider's key goes too.
         if let Some((name, provider)) = removing
-            && !config.providers.contains_key(&name)
             && vivus_core::keys::key_var(&name, &provider).is_some()
         {
             tokio::spawn(async move {

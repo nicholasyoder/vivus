@@ -63,8 +63,8 @@ private:
     QString roleValue(const RoleRow &row, const char *key) const;
     RoleRow *findRole(const QString &role);
 
-    // One openai-compatible provider: its base URL, Remove unless it's built
-    // in, and its key. Keys are write-only, so a masked field to paste a new
+    // One provider: its base URL (or kind), Remove, and for openai-compatible
+    // ones the key. Keys are write-only, so a masked field to paste a new
     // one, with where the current one lives as its placeholder.
     struct KeyRow {
         QString provider;
@@ -83,6 +83,7 @@ private:
     QString providerLabel(const QString &provider) const;
     void relabelProviders();
     void removeProvider(const QString &provider);
+    void onPresetChanged();
     void updateAddProvider();
     void addProvider();
     void alignLabels();
@@ -121,7 +122,9 @@ private:
     QFormLayout *m_keysForm;
     std::vector<KeyRow> m_keys;
     QHash<QString, QString> m_keyStatus;
-    QStringList m_builtins;
+    QComboBox *m_newPreset;
+    // The name the current preset filled in, so a typed name isn't replaced.
+    QString m_presetName;
     QLineEdit *m_newName;
     QLineEdit *m_newUrl;
     QLineEdit *m_newKey;

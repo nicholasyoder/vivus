@@ -7,22 +7,29 @@
 # keyring, or ~/.config/vivus/.env without one. An environment variable named
 # by api_key_env (default <NAME>_API_KEY) wins over a saved key.
 
-# Built-in providers, usable without any [providers] table: openai, groq and
-# nano-gpt (openai-compatible; each needs a key), local-speech (speech models
-# from `vivusctl models fetch`, in ~/.local/share/vivus/models) and claude-code
-# (headless `claude -p`). A table with the same name replaces a built-in.
-#
-# Any other OpenAI-compatible endpoint (Settings > Providers adds one too):
-# [providers.my-server]
-# kind = "openai-compatible"
-# base_url = "http://localhost:8080/v1"
+[providers.groq]
+kind = "openai-compatible"
+base_url = "https://api.groq.com/openai/v1"
+api_key_env = "GROQ_API_KEY"
 
-# Claude Code runs in your home directory and can't ask for permission, so
-# only the tools listed in args are allowed beyond read-only ones.
-# [providers.claude-code]
-# kind = "claude-code"
-# command = "claude"
-# args = ["--allowedTools", "WebSearch,WebFetch"]
+# OpenAI-compatible aggregator with most models (https://docs.nano-gpt.com).
+[providers.nano-gpt]
+kind = "openai-compatible"
+base_url = "https://nano-gpt.com/api/v1"
+api_key_env = "NANOGPT_API_KEY"
+
+# Local speech models (`vivusctl models fetch` downloads them).
+[providers.local-speech]
+kind = "local-speech"
+# models_dir = "~/.local/share/vivus/models"
+threads = 2
+
+# Headless Claude Code (`claude -p`), run in your home directory. It can't ask
+# for permission, so only the tools listed in args are allowed beyond read-only ones.
+[providers.claude-code]
+kind = "claude-code"
+command = "claude"
+args = ["--allowedTools", "WebSearch,WebFetch"]
 
 # Unset stt defaults to local-speech with parakeet-tdt-110m.
 # Models: parakeet-tdt-110m (light), parakeet-tdt-0.6b (standard),
