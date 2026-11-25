@@ -2,7 +2,6 @@
 
 #include "dbustypes.h"
 
-#include <QHash>
 #include <QWidget>
 
 #include <functional>
@@ -52,7 +51,7 @@ private:
 
     QWidget *addRole(const QString &role, const QString &tooltip);
     void updateRoles();
-    void fillProviders(RoleRow &row, const QStringList &providers);
+    void fillProviders(RoleRow &row, const ChoiceList &providers);
     void syncModels(RoleRow &row);
     void fillModels(RoleRow &row);
     void syncVoices(RoleRow &row);
@@ -63,9 +62,9 @@ private:
     QString roleValue(const RoleRow &row, const char *key) const;
     RoleRow *findRole(const QString &role);
 
-    // One provider: its base URL (or kind), Remove, and for openai-compatible
-    // ones the key. Keys are write-only, so a masked field to paste a new
-    // one, with where the current one lives as its placeholder.
+    // One [providers] entry: its base URL, Remove, and its key. Keys are
+    // write-only, so a masked field to paste a new one, with where the
+    // current one lives as its placeholder.
     struct KeyRow {
         QString provider;
         QLabel *url = nullptr;
@@ -79,9 +78,6 @@ private:
     void updateKeyStatus(const QString &provider);
     void saveKey(const QString &provider, const QString &key);
     KeyRow *findKey(const QString &provider);
-    // Role pickers say "(no key)" after providers that have none.
-    QString providerLabel(const QString &provider) const;
-    void relabelProviders();
     void removeProvider(const QString &provider);
     void onPresetChanged();
     void updateAddProvider();
@@ -121,7 +117,6 @@ private:
     QGroupBox *m_keysGroup;
     QFormLayout *m_keysForm;
     std::vector<KeyRow> m_keys;
-    QHash<QString, QString> m_keyStatus;
     QComboBox *m_newPreset;
     // The name the current preset filled in, so a typed name isn't replaced.
     QString m_presetName;

@@ -33,7 +33,10 @@ async fn main() -> anyhow::Result<()> {
         .find(|(n, _)| *n == role_name)
         .map(|(_, r)| r.clone())
         .with_context(|| format!("no [roles.{role_name}] in the config"))?;
-    let client = Client::from_provider(&role.provider, &config.providers[&role.provider])?;
+    let (name, provider) = config
+        .role_provider(&role_name)
+        .with_context(|| format!("[roles.{role_name}] has no provider"))?;
+    let client = Client::from_provider(&name, &provider)?;
     let model = role.model.context("role has no model")?;
 
     let mut req = ChatRequest::new(

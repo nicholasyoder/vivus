@@ -173,7 +173,7 @@ impl Settings {
         self.shared.lock().unwrap().audio_devices.clone()
     }
 
-    async fn list_providers(&self, role: String) -> fdo::Result<Vec<String>> {
+    async fn list_providers(&self, role: String) -> fdo::Result<Vec<vivus_dbus::Choice>> {
         self.ask(|reply| Command::ListProviders { role, reply })
             .await
     }

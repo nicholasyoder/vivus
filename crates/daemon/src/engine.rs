@@ -102,7 +102,7 @@ pub enum Command {
     /// `org.vivus.Settings.ListProviders`.
     ListProviders {
         role: String,
-        reply: oneshot::Sender<Result<Vec<String>, String>>,
+        reply: oneshot::Sender<Result<Vec<vivus_dbus::Choice>, String>>,
     },
     /// `org.vivus.Settings.ListModels`; answered from a task, since remote lists are fetched.
     ListModels {
@@ -305,7 +305,7 @@ impl Engine {
                 key,
                 reply,
             } => {
-                let found = self.config.providers.get(&provider).cloned();
+                let found = self.config.provider(&provider);
                 let tx = self.tx.clone();
                 tokio::spawn(async move {
                     let r = async {
@@ -327,8 +327,8 @@ impl Engine {
                 choices::forget_models(&self.model_cache, &provider);
             }
             Command::ApiKeyStatus { provider, reply } => {
-                let r = match self.config.providers.get(&provider) {
-                    Some(p) => Ok(vivus_core::keys::api_key(&provider, p)
+                let r = match self.config.provider(&provider) {
+                    Some(p) => Ok(vivus_core::keys::api_key(&provider, &p)
                         .1
                         .as_str()
                         .to_owned()),
@@ -713,11 +713,9 @@ impl Engine {
         // Edit what's on disk now, in case a hand edit hasn't been reloaded yet.
         let current = Config::read(&file)?;
         let removing = match path.split_once('.') {
-            Some(("providers", name)) if value.is_none() && !name.contains('.') => self
-                .config
-                .providers
-                .get(name)
-                .map(|p| (name.to_owned(), p.clone())),
+            Some(("providers", name)) if value.is_none() && !name.contains('.') => {
+                self.config.provider(name).map(|p| (name.to_owned(), p))
+            }
             _ => None,
         };
         let (text, config) = vivus_core::settings::edit(&current, &file, path, value)?;
@@ -776,10 +774,11 @@ impl Engine {
             tracing::info!("applies after restart: {}", later.join(", "));
         }
         // Rebuilt from the new config on the next turn.
-        if paths
-            .iter()
-            .any(|p| p.starts_with("roles.") || p.starts_with("providers."))
-        {
+        if paths.iter().any(|p| {
+            ["roles.", "providers.", "claude_code."]
+                .iter()
+                .any(|s| p.starts_with(s))
+        }) {
             self.router = None;
         }
         for name in paths.iter().filter_map(|p| p.strip_prefix("providers.")) {

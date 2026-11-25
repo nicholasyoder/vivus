@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use anyhow::{Context, bail};
 use tokio::sync::mpsc::UnboundedSender;
 use vivus_audio::{Capture, CaptureOptions, EchoCancelOptions};
-use vivus_core::config::{Audio, Config, Provider, Role};
+use vivus_core::config::{Audio, Config, Role, Speech};
 use vivus_speech::{Listener, Mode, Recorder, VadOptions, stt};
 
 use crate::engine::Command;
@@ -208,18 +208,19 @@ pub(crate) struct LocalSpeech {
     pub voice: Option<String>,
 }
 
-/// An unset role means local speech with `default_model`.
+/// Speech roles run on local speech, with `default_model` when unset.
 pub(crate) fn resolve_local(
     config: &Config,
     name: &str,
     role: Option<&Role>,
     default_model: &str,
 ) -> anyhow::Result<LocalSpeech> {
-    let provider = role.map(|r| (r.provider.as_str(), &config.providers[&r.provider]));
-    let (models_dir, threads) = local_provider(name, provider)?;
+    if let Some(p) = role.and_then(|r| r.provider.as_deref()) {
+        bail!("{name} provider `{p}`: only local speech is implemented so far")
+    }
     Ok(LocalSpeech {
-        models_dir,
-        threads,
+        models_dir: models_dir(&config.speech)?,
+        threads: config.speech.threads,
         model: role
             .and_then(|r| r.model.clone())
             .unwrap_or_else(|| default_model.into()),
@@ -227,30 +228,11 @@ pub(crate) fn resolve_local(
     })
 }
 
-/// Models dir and thread count of a local-speech provider (`None`: the default one).
-pub(crate) fn local_provider(
-    role: &str,
-    provider: Option<(&str, &Provider)>,
-) -> anyhow::Result<(PathBuf, i32)> {
-    let default_dir = || vivus_speech::default_models_dir().context("no home directory");
-    match provider {
-        None => Ok((default_dir()?, 2)),
-        Some((
-            _,
-            Provider::LocalSpeech {
-                models_dir,
-                threads,
-            },
-        )) => Ok((
-            match models_dir {
-                Some(d) => expand_tilde(d),
-                None => default_dir()?,
-            },
-            *threads,
-        )),
-        Some((name, _)) => {
-            bail!("{role} provider `{name}`: only local-speech is implemented so far")
-        }
+/// `[speech] models_dir`, or the default under the data dir.
+pub(crate) fn models_dir(speech: &Speech) -> anyhow::Result<PathBuf> {
+    match &speech.models_dir {
+        Some(d) => Ok(expand_tilde(d)),
+        None => vivus_speech::default_models_dir().context("no home directory"),
     }
 }
 

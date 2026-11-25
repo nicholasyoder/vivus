@@ -6,7 +6,7 @@
    #DuckVolume, #SettingsStatus, #OpenConfigButton; per role #SttProvider,
    #SttModel, #TtsProvider, #TtsModel, #RouterProvider, #RouterModel,
    #AnswerProvider, #AnswerModel, #AgentProvider, #AgentModel,
-   #VisionProvider, #VisionModel; #TtsVoice; #Providers (group), per
+   #VisionProvider, #VisionModel; #TtsVoice; #Providers (API providers group), per
    provider #ProviderUrl, #RemoveProviderButton, #ApiKey, #SaveApiKeyButton,
    #RemoveApiKeyButton; #NewProviderPreset, #NewProviderName, #NewProviderUrl, #NewProviderKey,
    #AddProviderButton.

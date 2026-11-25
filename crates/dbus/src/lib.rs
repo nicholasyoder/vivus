@@ -65,7 +65,7 @@ pub trait Settings {
     #[zbus(signal)]
     fn audio_devices_changed(&self, devices: Vec<AudioDevice>) -> zbus::Result<()>;
 
-    fn list_providers(&self, role: &str) -> zbus::Result<Vec<String>>;
+    fn list_providers(&self, role: &str) -> zbus::Result<Vec<Choice>>;
     fn list_models(&self, role: &str, provider: &str) -> zbus::Result<Vec<Choice>>;
     fn list_voices(&self, provider: &str, model: &str) -> zbus::Result<Vec<Choice>>;
     fn set_api_key(&self, provider: &str, key: &str) -> zbus::Result<()>;

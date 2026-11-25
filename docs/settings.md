@@ -175,19 +175,21 @@ and registered at startup.
 
 The window's Models group has a row per role (stt, tts, router, answer,
 agent, vision): a provider picker, then a model picker, plus the TTS voice.
-Keys and providers have their own group (see [Providers](#providers)).
+API providers and their keys have their own group (see [Providers](#providers)).
 
-- **Providers.** `ListProviders(role)` returns the configured providers whose
-  kind can serve the role (`Provider::serves`): `local-speech` for stt/tts,
-  `openai-compatible` for the LLM roles, `claude-code` for answer and agent
-  only (the router needs streamed tool calls). The first picker entry is the
-  unset role: "Default (local)" for stt/tts, "None" for the rest (agent then
-  falls back to answer). A provider without a key reads "groq (no key)".
+- **Providers.** `ListProviders(role)` returns `(name, label)` for the
+  providers that can serve the role (`Provider::serves`): `[providers]`
+  entries for the LLM roles, then `claude-code` for answer and agent only
+  (the router needs streamed tool calls). Labels come from the daemon:
+  "groq (no key)", "Claude Code (not installed)" when its command isn't on
+  `$PATH`. The first picker entry is the unset role: "Local" for stt/tts
+  (they list nothing else until remote speech exists), "None" for the rest
+  (agent then falls back to answer).
 - **Models.** `ListModels(role, provider)` gives `(id, label)`; an empty id is
   the unset model, labelled with the default it stands for. Local speech
   lists catalog models that are on disk (`installed()`), with labels from the
-  catalog. `claude-code` offers its aliases (haiku, sonnet, opus). An
-  `openai-compatible` provider is asked for `GET /models`, cached for 5
+  catalog. `claude-code` offers its aliases (haiku, sonnet, opus). A
+  `[providers]` entry is asked for `GET /models`, cached for 5
   minutes per provider, with speech, embedding and guard models dropped by
   id. That list can be long (nano-gpt: ~600) and may lack a model the
   provider still serves, so its picker is editable: type to filter, or enter
@@ -211,7 +213,7 @@ Keys and providers have their own group (see [Providers](#providers)).
 ### Reloading speech
 
 A change to what `roles.stt` or `roles.tts` resolves to (provider, model,
-voice, or the local-speech provider's `models_dir`/`threads`) reloads that
+voice, or `[speech]` `models_dir`/`threads`) reloads that
 side 300 ms after the last such change, so a reset-then-set pair loads once.
 Each load carries a generation and an older result is dropped. A config that
 can't load (a hand edit naming a missing model) is logged and the old models
@@ -261,7 +263,7 @@ settings window sets them; nothing has to be edited by hand.
 - **Applying.** Setting a key drops the router (rebuilt on the next turn) and
   that provider's `/models` cache entry. Pronunciation lookups keep the
   client they started with until the speaker reloads.
-- **Window.** Each provider row in the Providers group has a masked key
+- **Window.** Each row in the API providers group has a masked key
   field whose placeholder says where the current key lives, plus Save and
   Remove key. After a save the roles on that provider list their models
   again, which tests the key (a failure shows in the model picker's tooltip).
@@ -271,39 +273,57 @@ settings window sets them; nothing has to be edited by hand.
 
 ## Providers
 
-Providers come only from the config file; there are no built-ins. A fresh
-install has none, and speech still works (unset `stt`/`tts` mean local
-speech); the LLM roles stay "None" until you add one. Built-in `openai`,
-`groq` and `nano-gpt` were tried and dropped (2026-11-25): rows for unused,
-keyless providers cluttered the window, and they needed merge, override and
-can't-remove rules. Presets in the Add row keep setup just as quick.
+Three kinds of thing serve roles, and the config gives each its own place:
 
-The window's Providers group has a row per configured provider: its base URL
-(or "Claude Code (claude -p)", "Local speech models"), Remove, and for
-`openai-compatible` ones the key field (see [API keys](#api-keys)). Then the
-Add row.
+- **API providers**: `[providers.<name>]` with `base_url` and optionally
+  `api_key_env`. Only OpenAI-compatible APIs exist so far, so there's no
+  `kind` key; one can be added (defaulting to OpenAI-compatible) when a
+  second API style arrives. These are the only ones you add and remove.
+- **Local speech**: the in-process sherpa-onnx engine, configured by
+  `[speech]` (`models_dir`, `threads`). `roles.stt` and `roles.tts` name no
+  provider: unset means local speech, and a speech role naming one is
+  refused until remote speech exists.
+- **Claude Code**: always available as provider `claude-code` (answer and
+  agent), configured by `[claude_code]` (`command`, `args`). The name is
+  reserved in `[providers]`.
 
-- **Presets.** The Add row's picker offers OpenAI-compatible (blank), OpenAI
-  (`https://api.openai.com/v1`), Groq (`https://api.groq.com/openai/v1`),
-  NanoGPT (`https://nano-gpt.com/api/v1`) and Claude Code. Choosing one fills
-  in the name (unless you typed one) and URL; Claude Code hides the URL and
-  key. The presets live in the sidebar only, as a typing aid.
+`Config::provider(name)` resolves a role's provider to the `Provider` enum
+(`OpenaiCompatible` or `ClaudeCode`) that clients are built from.
+`Config::validate` checks that every role's provider exists and can serve it,
+and that the LLM roles name one.
+
+**History.** First everything was a `[providers]` entry with a `kind`.
+Making `openai`, `groq` and `nano-gpt` built in cluttered the window with
+unused, keyless rows; making nothing built in put local speech and Claude
+Code in a list of API endpoints where Remove made no sense, and a removed
+local-speech couldn't be added back. Both were tried and dropped on
+2026-11-25.
+
+The window's API providers group has a row per `[providers]` entry: base
+URL, Remove, and the key field (see [API keys](#api-keys)). Then the Add row.
+
+- **Presets.** The Add row's picker offers Other (blank), OpenAI
+  (`https://api.openai.com/v1`), Groq (`https://api.groq.com/openai/v1`) and
+  NanoGPT (`https://nano-gpt.com/api/v1`). Choosing one fills in the name
+  (unless you typed one) and URL. The presets live in the sidebar only, as a
+  typing aid.
 - **Names and URLs.** Provider names are letters, digits, `-` and `_` (they
-  become TOML keys and `<NAME>_API_KEY`); `base_url` must be http(s). Both are
-  checked in `Config::validate`, so a hand edit is held to the same rules.
-  Add stays disabled until the name is valid and unused and the URL is http(s).
-- **Adding.** A provider table needs `kind` and `base_url` in one step, so
-  `Set` also takes a dictionary (`a{sv}`) and writes it as a whole `[table]`
-  (replacing one there, `kind` first). The window sends
-  `Set("providers.<name>", {kind, base_url})`, then `SetApiKey` if a key was
-  typed. From the shell:
-  `vivusctl settings set providers.mine '{kind = "openai-compatible", base_url = "…"}'`.
+  become TOML keys and `<NAME>_API_KEY`), and not `claude-code`; `base_url`
+  must be http(s). Both are checked in `Config::validate`, so a hand edit is
+  held to the same rules. Add stays disabled until the name is valid and
+  unused and the URL is http(s).
+- **Adding.** `Set` also takes a dictionary (`a{sv}`) and writes it as a
+  whole `[table]` (replacing one there), so a provider appears in one valid
+  step. The window sends `Set("providers.<name>", {base_url})`, then
+  `SetApiKey` if a key was typed. From the shell:
+  `vivusctl settings set providers.mine '{base_url = "…"}'`.
 - **Removing** is `Reset("providers.<name>")`, behind a confirmation. It's
   refused while a role uses the provider ("`mine` is used by the router
   role; choose another provider there first"). The provider's key is deleted
   too (keyring and `.env`).
-- **Applying.** Any change under `providers.<name>` drops the router (rebuilt
-  on the next turn) and that provider's `/models` cache entry.
+- **Applying.** Any change under `providers.<name>` or `claude_code` drops
+  the router (rebuilt on the next turn); a `providers.<name>` change also
+  drops that provider's `/models` cache entry.
 
 ## Later
 

@@ -7,47 +7,73 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail, ensure};
 use vivus_core::Config;
-use vivus_core::config::{Provider, ROLES};
+use vivus_core::config::{CLAUDE_CODE, Provider, ROLES};
+use vivus_core::keys::KeySource;
 use vivus_dbus::Choice;
 use vivus_speech::{SttModel, TtsModel};
 
 use crate::speaker::DEFAULT_TTS_MODEL;
-use crate::voice::{DEFAULT_STT_MODEL, LocalSpeech, local_provider, resolve_local};
+use crate::voice::{DEFAULT_STT_MODEL, LocalSpeech, models_dir, resolve_local};
 
 /// `/models` answers by provider, so opening the settings window doesn't hit
 /// every provider each time.
 pub type ModelCache = Arc<Mutex<HashMap<String, (Instant, Vec<String>)>>>;
 const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 
-/// Configured providers that can serve `role`.
-pub fn providers(config: &Config, role: &str) -> anyhow::Result<Vec<String>> {
+/// Providers that can serve `role`, as (name, label): the `[providers]`
+/// entries ("groq (no key)" without one), then Claude Code. Speech roles have
+/// none yet: they run locally, which is the unset provider.
+pub fn providers(config: &Config, role: &str) -> anyhow::Result<Vec<Choice>> {
     ensure!(ROLES.contains(&role), "unknown role `{role}`");
-    Ok(config
-        .providers
-        .iter()
-        .filter(|(_, p)| p.serves(role))
-        .map(|(name, _)| name.clone())
-        .collect())
+    let mut out = Vec::new();
+    for name in config.providers.keys() {
+        let p = config.provider(name).unwrap();
+        if p.serves(role) {
+            let label = match vivus_core::keys::api_key(name, &p).1 {
+                KeySource::Missing => format!("{name} (no key)"),
+                _ => name.clone(),
+            };
+            out.push((name.clone(), label));
+        }
+    }
+    let cc = config.provider(CLAUDE_CODE).unwrap();
+    if cc.serves(role) {
+        let label = if on_path(&config.claude_code.command) {
+            "Claude Code"
+        } else {
+            "Claude Code (not installed)"
+        };
+        out.push((CLAUDE_CODE.into(), label.into()));
+    }
+    Ok(out)
 }
 
-/// `""` is the role's default provider (`None`).
-fn provider<'a>(
-    config: &'a Config,
-    name: &'a str,
-) -> anyhow::Result<Option<(&'a str, &'a Provider)>> {
+/// Whether `command` runs: a path that exists, or a name found on `$PATH`.
+fn on_path(command: &str) -> bool {
+    if command.contains('/') {
+        return std::path::Path::new(command).is_file();
+    }
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(command).is_file()))
+}
+
+/// `""` is the role's default provider (`None`: local speech).
+fn provider(config: &Config, name: &str) -> anyhow::Result<Option<(String, Provider)>> {
     if name.is_empty() {
         return Ok(None);
     }
     let p = config
-        .providers
-        .get(name)
+        .provider(name)
         .with_context(|| format!("no provider `{name}`"))?;
-    Ok(Some((name, p)))
+    Ok(Some((name.to_owned(), p)))
 }
 
 /// TTS voices of `model` (`""`: the default model), default first.
 pub fn voices(config: &Config, provider_name: &str, model: &str) -> anyhow::Result<Vec<Choice>> {
-    local_provider("tts", provider(config, provider_name)?)?;
+    ensure!(
+        provider(config, provider_name)?.is_none(),
+        "only local speech has voices"
+    );
     let model = TtsModel::find(if model.is_empty() {
         DEFAULT_TTS_MODEL
     } else {
@@ -72,14 +98,11 @@ pub async fn models(
 ) -> anyhow::Result<Vec<Choice>> {
     ensure!(ROLES.contains(&role), "unknown role `{role}`");
     let p = provider(config, provider_name)?;
-    if let Some((name, p)) = p {
+    if let Some((name, p)) = &p {
         ensure!(p.serves(role), "provider `{name}` can't serve {role}");
     }
     match p {
-        None | Some((_, Provider::LocalSpeech { .. })) => {
-            let (dir, _) = local_provider(role, p)?;
-            local_models(role, &dir)
-        }
+        None => local_models(role, &models_dir(&config.speech)?),
         Some((_, Provider::ClaudeCode { .. })) => Ok([
             ("", "Default"),
             ("haiku", "Haiku"),
@@ -88,7 +111,10 @@ pub async fn models(
         ]
         .map(|(id, label)| (id.to_owned(), label.to_owned()))
         .into()),
-        Some((name, p @ Provider::OpenaiCompatible { base_url, .. })) => {
+        Some((name, p @ Provider::OpenaiCompatible { .. })) => {
+            let Provider::OpenaiCompatible { base_url, .. } = &p else {
+                unreachable!()
+            };
             let key = format!("{name} {base_url}");
             let cached = cache
                 .lock()
@@ -99,7 +125,7 @@ pub async fn models(
             let ids = match cached {
                 Some(ids) => ids,
                 None => {
-                    let client = vivus_inference::Client::from_provider(name, p)?;
+                    let client = vivus_inference::Client::from_provider(&name, &p)?;
                     let ids = client
                         .models()
                         .await
@@ -214,20 +240,26 @@ mod tests {
 
     const PROVIDERS: &str = r#"
 [providers.groq]
-kind = "openai-compatible"
 base_url = "http://127.0.0.1:9"
-[providers.cc]
-kind = "claude-code"
-[providers.local]
-kind = "local-speech"
+[claude_code]
+command = "/nonexistent/claude"
 "#;
 
     #[test]
     fn providers_by_role() {
         let c = config(PROVIDERS);
-        assert_eq!(providers(&c, "stt").unwrap(), ["local"]);
-        assert_eq!(providers(&c, "router").unwrap(), ["groq"]);
-        assert_eq!(providers(&c, "agent").unwrap(), ["cc", "groq"]);
+        let names = |role| -> Vec<String> {
+            providers(&c, role)
+                .unwrap()
+                .into_iter()
+                .map(|(n, _)| n)
+                .collect()
+        };
+        assert!(names("stt").is_empty());
+        assert_eq!(names("router"), ["groq"]);
+        assert_eq!(names("agent"), ["groq", "claude-code"]);
+        let agent = providers(&c, "agent").unwrap();
+        assert_eq!(agent[1].1, "Claude Code (not installed)");
         assert!(providers(&c, "nope").is_err());
     }
 
@@ -235,10 +267,10 @@ kind = "local-speech"
     async fn fixed_model_lists() {
         let c = config(PROVIDERS);
         let cache = ModelCache::default();
-        let cc = models(&c, "agent", "cc", &cache).await.unwrap();
+        let cc = models(&c, "agent", "claude-code", &cache).await.unwrap();
         assert_eq!(cc[0].0, "");
         assert!(cc.iter().any(|(id, _)| id == "opus"));
-        assert!(models(&c, "router", "cc", &cache).await.is_err());
+        assert!(models(&c, "router", "claude-code", &cache).await.is_err());
         assert!(models(&c, "router", "", &cache).await.is_err());
         // An empty dir still offers the default.
         let local = local_models("tts", std::path::Path::new("/nonexistent")).unwrap();
@@ -251,7 +283,7 @@ kind = "local-speech"
     #[test]
     fn voice_list() {
         let c = config(PROVIDERS);
-        let v = voices(&c, "local", "kokoro").unwrap();
+        let v = voices(&c, "", "kokoro").unwrap();
         assert_eq!(
             v[0],
             (String::new(), "Default: Heart (American, female)".into())
@@ -263,7 +295,7 @@ kind = "local-speech"
     #[test]
     fn edit_checks() {
         let c = config(&format!(
-            "{PROVIDERS}[roles.tts]\nprovider = \"local\"\nmodel = \"kokoro\"\nvoice = \"bella\"\n"
+            "{PROVIDERS}[roles.tts]\nmodel = \"kokoro\"\nvoice = \"bella\"\n"
         ));
         let err = check_edit(&c, "roles.tts.voice").unwrap_err();
         assert!(err.to_string().contains("unknown voice"), "{err}");

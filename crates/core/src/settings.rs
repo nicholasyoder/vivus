@@ -64,8 +64,6 @@ pub fn edit(
         (Some(Value::InlineTable(t)), _) => {
             let mut t = t.into_table();
             t.set_implicit(false);
-            // D-Bus dictionaries arrive sorted; `kind` reads best first.
-            t.sort_values_by(|a, _, b, _| (a.get() != "kind").cmp(&(b.get() != "kind")));
             table.insert(last, Item::Table(t));
         }
         // Keep the old value's surrounding whitespace and trailing comment.
@@ -185,7 +183,7 @@ echo_cancel = true
     fn reset_under_missing_table() {
         let (text, _) = set(FILE, "roles.tts.voice", None).unwrap();
         assert_eq!(text, FILE);
-        let text = "[providers.l]\nkind = \"local-speech\"\n[roles.tts]\nprovider = \"l\"\n";
+        let text = "[roles.tts]\nmodel = \"kokoro\"\n";
         let (text, config) = set(text, "roles.tts", None).unwrap();
         assert!(!text.contains("roles") && config.roles.tts.is_none());
     }
@@ -194,11 +192,8 @@ echo_cancel = true
     fn provider_tables() {
         let mut t = toml_edit::InlineTable::new();
         t.insert("base_url", "https://example.com/v1".into());
-        t.insert("kind", "openai-compatible".into());
         let (text, config) = set(FILE, "providers.mine", Some(Value::InlineTable(t))).unwrap();
-        assert!(text.ends_with(
-            "[providers.mine]\nkind = \"openai-compatible\"\nbase_url = \"https://example.com/v1\"\n"
-        ));
+        assert!(text.ends_with("[providers.mine]\nbase_url = \"https://example.com/v1\"\n"));
         assert!(config.providers.contains_key("mine"));
         let used = format!("{text}[roles.router]\nprovider = \"mine\"\n");
         assert!(matches!(
@@ -250,18 +245,10 @@ echo_cancel = true
         assert_eq!(changed_paths(&old, &new), ["audio.input"]);
         assert!(changed_paths(&new, &new).is_empty());
 
-        let text = "[providers.l]\nkind = \"local-speech\"\n[roles.stt]\nprovider = \"l\"\n";
+        let text = "[speech]\nthreads = 4\n[roles.stt]\nmodel = \"a\"\n";
         let (_, new) = set(text, "roles.stt.model", Some("m".into())).unwrap();
         let mut paths = changed_paths(&old, &new);
         paths.sort();
-        assert_eq!(
-            paths,
-            [
-                "providers.l.kind",
-                "providers.l.threads",
-                "roles.stt.model",
-                "roles.stt.provider",
-            ]
-        );
+        assert_eq!(paths, ["roles.stt.model", "speech.threads"]);
     }
 }

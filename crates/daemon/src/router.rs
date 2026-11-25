@@ -113,17 +113,17 @@ pub enum Backend {
 
 impl Backend {
     fn from_config(config: &Config, name: &str) -> anyhow::Result<Option<Self>> {
-        let Some((_, role)) = config.roles.iter().find(|(n, _)| *n == name) else {
+        let Some(role) = config.roles.get(name) else {
             return Ok(None);
         };
-        let provider = &config.providers[&role.provider];
+        let (provider_name, provider) = config.role_provider(name).context("no provider")?;
         let backend = match provider {
             Provider::ClaudeCode { .. } => Backend::ClaudeCode {
-                cc: ClaudeCode::from_provider(provider)?,
+                cc: ClaudeCode::from_provider(&provider)?,
                 model: role.model.clone(),
             },
             _ => Backend::Chat {
-                client: Client::from_provider(&role.provider, provider)?,
+                client: Client::from_provider(&provider_name, &provider)?,
                 model: role.model.clone().context("no model")?,
             },
         };
@@ -182,9 +182,11 @@ impl Router {
             .as_ref()
             .context("no [roles.router] in the config")?;
         let model = role.model.clone().context("[roles.router] has no model")?;
-        let provider = &config.providers[&role.provider];
-        let client = Client::from_provider(&role.provider, provider)
-            .with_context(|| format!("router provider `{}`", role.provider))?;
+        let (name, provider) = config
+            .role_provider("router")
+            .context("[roles.router] has no provider")?;
+        let client = Client::from_provider(&name, &provider)
+            .with_context(|| format!("router provider `{name}`"))?;
         let mut router = Self::new(client, model);
         // A broken escalation role shouldn't take the router down with it.
         for name in ["answer", "agent"] {

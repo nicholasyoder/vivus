@@ -57,6 +57,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] API keys from the settings window: stored in the Secret Service, `.env` fallback without a keyring; never sent back over D-Bus; key status per provider (2026-11-25, `7a44fe4`) — [settings.md](settings.md#api-keys)
 - [x] Add/remove OpenAI-compatible providers in the settings window (name, base URL, key); built-in `openai`, `nano-gpt`, `groq`, `local-speech` and `claude-code` present without config (2026-11-25, `a1b7442`) — [settings.md](settings.md#providers)
 - [x] Drop the built-in providers again; presets (OpenAI, Groq, NanoGPT, Claude Code) in the Add row instead (2026-11-25, `65cced5`) — [settings.md](settings.md#providers)
+- [x] Config format: `[providers]` for API providers only (no `kind`); `[speech]` and `[claude_code]` sections; speech roles name no provider; `ListProviders` returns labels (2026-11-25, `HASH`) — [settings.md](settings.md#providers)
 
 ### 1e: Smarter answers
 
@@ -122,7 +123,7 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 ## Decided
 
-- No built-in providers: every provider is in the config file, added from Settings with presets for common ones (2026-11-25).
+- `[providers]` holds only API providers (added from Settings, with presets); local speech (`[speech]`, the unset stt/tts provider) and Claude Code (`[claude_code]`, provider `claude-code`) are always there and aren't listed (2026-11-25).
 - API keys never go in `config.toml`, and they're managed from the settings window rather than by hand-editing `.env` (2026-11-25).
 - API keys are stored in the Secret Service (keyring), falling back to a daemon-written `~/.config/vivus/.env` (0600) when no keyring is running (2026-11-25).
 

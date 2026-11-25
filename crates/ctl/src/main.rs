@@ -63,8 +63,8 @@ enum SettingsCmd {
     /// Print the effective config as JSON, or one value by dotted path.
     Get { path: Option<String> },
     /// Set a dotted path (`audio.input`) to a TOML value; bare words are strings.
-    /// An inline table writes a whole table: `providers.mine '{kind =
-    /// "openai-compatible", base_url = "https://…/v1"}'`.
+    /// An inline table writes a whole table: `providers.mine '{base_url =
+    /// "https://…/v1"}'`.
     Set { path: String, value: String },
     /// Remove a key so its default applies.
     Reset { path: String },
@@ -74,7 +74,7 @@ enum SettingsCmd {
     Meter,
     /// Print the mic's gain (its PipeWire volume, 0 to 1), or set it.
     Gain { value: Option<f64> },
-    /// Configured providers that can serve a role (stt, tts, router, answer, agent, vision).
+    /// Providers that can serve a role (stt, tts, router, answer, agent, vision).
     Providers { role: String },
     /// Models for `roles.<role>.model`: the role's provider unless one is given.
     Models {
@@ -193,9 +193,7 @@ async fn settings(conn: &zbus::Connection, action: SettingsCmd) -> anyhow::Resul
             }
         }
         SettingsCmd::Providers { role } => {
-            for p in proxy.list_providers(&role).await.context(DAEMON)? {
-                println!("{p}");
-            }
+            print_choices(proxy.list_providers(&role).await.context(DAEMON)?);
         }
         SettingsCmd::Models { role, provider } => {
             let provider = match provider {

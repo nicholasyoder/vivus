@@ -65,7 +65,7 @@
       <arg name="json" type="s" direction="out"/>
     </method>
     <!-- Sets one key. A dictionary (a{sv}) is written as a whole table, e.g.
-         providers.<name> = {kind, base_url} adds a provider. An
+         providers.<name> = {base_url} adds a provider. An
          invalid path or value fails with the reason and leaves the file alone. -->
     <method name="Set">
       <arg name="path" type="s" direction="in"/>
@@ -94,17 +94,20 @@
       <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="AudioDeviceList"/>
     </signal>
 
-    <!-- Configured providers that can serve a role (stt, tts, router, answer,
-         agent, vision): the names roles.<role>.provider takes. -->
+    <!-- Providers that can serve a role (stt, tts, router, answer, agent,
+         vision), as name (the roles.<role>.provider value) and label, e.g.
+         "groq (no key)", "Claude Code (not installed)". The [providers] entries,
+         then claude-code. Speech roles list none: unset means local speech. -->
     <method name="ListProviders">
       <arg name="role" type="s" direction="in"/>
-      <arg name="providers" type="as" direction="out"/>
+      <arg name="providers" type="a(ss)" direction="out"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="ChoiceList"/>
     </method>
     <!-- Models a provider offers for a role: id (the roles.<role>.model value)
          and label. An empty id is the unset model, i.e. the provider's default.
-         An empty provider is the role's default provider (local speech for stt
-         and tts). Local speech lists the models on disk, openai-compatible
-         providers their /models, claude-code its aliases. Fails with the reason
+         An empty provider means local speech (stt and tts). Local speech lists
+         the models on disk, [providers] entries their /models, claude-code its
+         aliases. Fails with the reason
          if the provider can't be reached. -->
     <method name="ListModels">
       <arg name="role" type="s" direction="in"/>

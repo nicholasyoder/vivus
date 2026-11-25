@@ -159,7 +159,7 @@ mod tests {
         assert!(!needs_restart("audio.output") && reopens_mic("audio.output"));
         assert!(!needs_restart("audio.duck_volume"));
         assert!(!needs_restart("audio.record_utterances"));
-        assert!(!needs_restart("providers.local-speech.threads"));
+        assert!(!needs_restart("speech.threads"));
         assert!(needs_restart("shortcuts.push_to_talk"));
         assert!(!needs_restart("roles.router.model"));
         assert!(!needs_restart("debug.transcribe_only"));

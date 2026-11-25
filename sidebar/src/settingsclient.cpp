@@ -96,9 +96,9 @@ static void onReply(QObject *ctx, const QDBusPendingCall &call, F done)
     });
 }
 
-void SettingsClient::listProviders(const QString &role, ProvidersReply done)
+void SettingsClient::listProviders(const QString &role, ChoicesReply done)
 {
-    onReply<QStringList>(this, m_iface->ListProviders(role), std::move(done));
+    onReply<ChoiceList>(this, m_iface->ListProviders(role), std::move(done));
 }
 
 void SettingsClient::listModels(const QString &role, const QString &provider, ChoicesReply done)

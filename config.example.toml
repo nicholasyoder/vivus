@@ -7,42 +7,42 @@
 # keyring, or ~/.config/vivus/.env without one. An environment variable named
 # by api_key_env (default <NAME>_API_KEY) wins over a saved key.
 
+# Remote APIs (OpenAI-compatible), by name; the Settings window adds them with
+# presets. Roles refer to them by name.
 [providers.groq]
-kind = "openai-compatible"
 base_url = "https://api.groq.com/openai/v1"
-api_key_env = "GROQ_API_KEY"
 
 # OpenAI-compatible aggregator with most models (https://docs.nano-gpt.com).
 [providers.nano-gpt]
-kind = "openai-compatible"
 base_url = "https://nano-gpt.com/api/v1"
+# The key's variable in the environment and .env (default NANO_GPT_API_KEY).
 api_key_env = "NANOGPT_API_KEY"
 
-# Local speech models (`vivusctl models fetch` downloads them).
-[providers.local-speech]
-kind = "local-speech"
+# Local speech models (`vivusctl models fetch` downloads them), used by the
+# stt and tts roles.
+[speech]
 # models_dir = "~/.local/share/vivus/models"
 threads = 2
 
-# Headless Claude Code (`claude -p`), run in your home directory. It can't ask
-# for permission, so only the tools listed in args are allowed beyond read-only ones.
-[providers.claude-code]
-kind = "claude-code"
+# Headless Claude Code (`claude -p`), always available to the answer and agent
+# roles as provider "claude-code". It runs in your home directory and can't ask
+# for permission, so only the tools listed in args are allowed beyond
+# read-only ones.
+[claude_code]
 command = "claude"
 args = ["--allowedTools", "WebSearch,WebFetch"]
 
-# Unset stt defaults to local-speech with parakeet-tdt-110m.
+# Speech roles run locally and name no provider.
+# Unset stt means parakeet-tdt-110m.
 # Models: parakeet-tdt-110m (light), parakeet-tdt-0.6b (standard),
 # nemotron-streaming-0.6b (streaming, no punctuation).
 [roles.stt]
-provider = "local-speech"
 model = "parakeet-tdt-110m"
 
-# Unset tts defaults to local-speech with kitten-nano.
+# Unset tts means kitten-nano.
 # Models and voices: kitten-nano (light; bella, jasper, luna, bruno, rosie,
 # hugo, kiki, leo), kokoro (standard; af_heart, af_bella, am_michael, bf_emma, ...).
 [roles.tts]
-provider = "local-speech"
 model = "kokoro"
 voice = "af_heart"
 

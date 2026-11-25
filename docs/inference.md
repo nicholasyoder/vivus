@@ -14,8 +14,11 @@ role names a provider plus a model; switching providers is a config edit only.
 | `agent` | Multi-step tasks, computer control, heavy research | Frontier model via an OpenAI-compatible API, or headless Claude Code (`claude -p --output-format stream-json`) / Agent SDK |
 | `vision` | Reading screenshots when AT-SPI text isn't available | Any vision-capable model |
 
-Provider kinds today: `openai-compatible` (`base_url`, `api_key_env`),
-`claude-code` (`command`), `local-speech` (`models_dir`, `threads`).
+Providers today: `[providers.<name>]` entries, each an OpenAI-compatible API
+(`base_url`, `api_key_env`); `claude-code`, always there, configured by
+`[claude_code]` (`command`, `args`); and local speech, which stt and tts use
+when they name no provider, configured by `[speech]` (`models_dir`,
+`threads`). See [settings.md](settings.md#providers).
 
 ## Providers and client
 

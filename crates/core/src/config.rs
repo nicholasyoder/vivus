@@ -19,8 +19,14 @@ pub enum ConfigError {
     },
     #[error("role `{role}` references unknown provider `{provider}`")]
     UnknownProvider { role: String, provider: String },
+    #[error("provider `{provider}` can't serve the {role} role")]
+    CantServe { role: String, provider: String },
+    #[error("[roles.{0}] needs a provider")]
+    NoProvider(String),
     #[error("provider name `{0}` may only use letters, digits, `-` and `_`")]
     BadProviderName(String),
+    #[error("`{0}` is reserved; it names the [claude_code] section")]
+    ReservedProviderName(String),
     #[error("provider `{provider}`: base_url `{url}` must start with http:// or https://")]
     BadBaseUrl { provider: String, url: String },
 }
@@ -28,10 +34,16 @@ pub enum ConfigError {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Remote APIs by name. Local speech and Claude Code aren't listed here:
+    /// they have their own sections and are always available.
     #[serde(default)]
-    pub providers: BTreeMap<String, Provider>,
+    pub providers: BTreeMap<String, RemoteProvider>,
     #[serde(default)]
     pub roles: Roles,
+    #[serde(default)]
+    pub speech: Speech,
+    #[serde(default)]
+    pub claude_code: ClaudeCodeConfig,
     #[serde(default)]
     pub audio: Audio,
     #[serde(default)]
@@ -111,41 +123,83 @@ impl Default for Audio {
     }
 }
 
+/// An OpenAI-compatible API.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteProvider {
+    pub base_url: String,
+    /// The variable the key goes by in the environment and `.env`; defaults
+    /// to `<NAME>_API_KEY`. Keys never go in this file (see `keys`).
+    pub api_key_env: Option<String>,
+}
+
+/// Local speech models, run in-process via sherpa-onnx: what stt and tts use
+/// when their role names no provider.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Speech {
+    /// Defaults to `~/.local/share/vivus/models`.
+    pub models_dir: Option<PathBuf>,
+    pub threads: i32,
+}
+
+impl Default for Speech {
+    fn default() -> Self {
+        Self {
+            models_dir: None,
+            threads: 2,
+        }
+    }
+}
+
+/// Headless Claude Code (`claude -p`), the `claude-code` provider.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ClaudeCodeConfig {
+    pub command: String,
+    /// Appended after `-p --output-format stream-json`. Headless runs can't
+    /// ask for permission, so this is where tools get allowed.
+    pub args: Vec<String>,
+}
+
+impl Default for ClaudeCodeConfig {
+    fn default() -> Self {
+        Self {
+            command: "claude".into(),
+            args: vec!["--allowedTools".into(), "WebSearch,WebFetch".into()],
+        }
+    }
+}
+
+/// The provider name that means Claude Code; reserved in `[providers]`.
+pub const CLAUDE_CODE: &str = "claude-code";
+
+/// A role's provider, resolved by [`Config::provider`].
+#[derive(Debug, Clone)]
 pub enum Provider {
     OpenaiCompatible {
         base_url: String,
-        /// The variable the key goes by in the environment and `.env`; defaults
-        /// to `<NAME>_API_KEY`. Keys never go in this file (see `keys`).
         api_key_env: Option<String>,
     },
     ClaudeCode {
-        #[serde(default = "default_claude_command")]
         command: String,
-        /// Appended after `-p --output-format stream-json`. Headless runs can't
-        /// ask for permission, so this is where tools get allowed.
-        #[serde(default = "default_claude_args")]
         args: Vec<String>,
-    },
-    /// Speech models run in-process via sherpa-onnx.
-    LocalSpeech {
-        /// Defaults to `~/.local/share/vivus/models`.
-        models_dir: Option<PathBuf>,
-        #[serde(default = "default_speech_threads")]
-        threads: i32,
     },
 }
 
 /// Roles a `[roles.*]` table can name.
 pub const ROLES: &[&str] = &["stt", "tts", "router", "answer", "agent", "vision"];
 
+/// Roles that run on local speech when they name no provider.
+pub fn is_speech_role(role: &str) -> bool {
+    matches!(role, "stt" | "tts")
+}
+
 impl Provider {
     /// Whether this kind of provider can serve `role` (what's implemented, not
     /// what the API could do: no remote STT/TTS yet).
     pub fn serves(&self, role: &str) -> bool {
         match self {
-            Provider::LocalSpeech { .. } => matches!(role, "stt" | "tts"),
             Provider::OpenaiCompatible { .. } => {
                 matches!(role, "router" | "answer" | "agent" | "vision")
             }
@@ -153,18 +207,6 @@ impl Provider {
             Provider::ClaudeCode { .. } => matches!(role, "answer" | "agent"),
         }
     }
-}
-
-fn default_speech_threads() -> i32 {
-    2
-}
-
-fn default_claude_command() -> String {
-    "claude".into()
-}
-
-fn default_claude_args() -> Vec<String> {
-    vec!["--allowedTools".into(), "WebSearch,WebFetch".into()]
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -200,13 +242,39 @@ impl Roles {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Role {
-    pub provider: String,
+    /// Unset only for stt and tts, meaning local speech.
+    pub provider: Option<String>,
     pub model: Option<String>,
     /// e.g. a TTS voice name.
     pub voice: Option<String>,
 }
 
 impl Config {
+    /// `claude-code` or a `[providers]` entry.
+    pub fn provider(&self, name: &str) -> Option<Provider> {
+        if name == CLAUDE_CODE {
+            let c = &self.claude_code;
+            return Some(Provider::ClaudeCode {
+                command: c.command.clone(),
+                args: c.args.clone(),
+            });
+        }
+        self.providers
+            .get(name)
+            .map(|p| Provider::OpenaiCompatible {
+                base_url: p.base_url.clone(),
+                api_key_env: p.api_key_env.clone(),
+            })
+    }
+
+    /// The provider a configured role names, with its name. `None` if the role
+    /// is unset or has none (local speech).
+    pub fn role_provider(&self, role: &str) -> Option<(String, Provider)> {
+        let name = self.roles.get(role)?.provider.clone()?;
+        let p = self.provider(&name)?;
+        Some((name, p))
+    }
+
     /// `$XDG_CONFIG_HOME/vivus/config.toml`, falling back to `~/.config`.
     pub fn default_path() -> Option<PathBuf> {
         let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -255,6 +323,9 @@ impl Config {
 
     fn validate(&self) -> Result<(), ConfigError> {
         for (name, provider) in &self.providers {
+            if name == CLAUDE_CODE {
+                return Err(ConfigError::ReservedProviderName(name.clone()));
+            }
             if name.is_empty()
                 || !name
                     .chars()
@@ -262,20 +333,31 @@ impl Config {
             {
                 return Err(ConfigError::BadProviderName(name.clone()));
             }
-            if let Provider::OpenaiCompatible { base_url, .. } = provider
-                && !(base_url.starts_with("https://") || base_url.starts_with("http://"))
-            {
+            let url = &provider.base_url;
+            if !(url.starts_with("https://") || url.starts_with("http://")) {
                 return Err(ConfigError::BadBaseUrl {
                     provider: name.clone(),
-                    url: base_url.clone(),
+                    url: url.clone(),
                 });
             }
         }
         for (name, role) in self.roles.iter() {
-            if !self.providers.contains_key(&role.provider) {
-                return Err(ConfigError::UnknownProvider {
+            let Some(provider) = &role.provider else {
+                if is_speech_role(name) {
+                    continue;
+                }
+                return Err(ConfigError::NoProvider(name.into()));
+            };
+            let p = self
+                .provider(provider)
+                .ok_or_else(|| ConfigError::UnknownProvider {
                     role: name.into(),
-                    provider: role.provider.clone(),
+                    provider: provider.clone(),
+                })?;
+            if !p.serves(name) {
+                return Err(ConfigError::CantServe {
+                    role: name.into(),
+                    provider: provider.clone(),
                 });
             }
         }
@@ -297,15 +379,35 @@ mod tests {
 
     #[test]
     fn provider_checks() {
-        let bad_url = "[providers.x]\nkind = \"openai-compatible\"\nbase_url = \"x.com\"\n";
+        let parse = |t: &str| Config::parse(t, Path::new("c"));
+        let bad_url = "[providers.x]\nbase_url = \"x.com\"\n";
         assert!(matches!(
             Config::parse(bad_url, Path::new("c")),
             Err(ConfigError::BadBaseUrl { .. })
         ));
-        let bad_name = "[providers.\"a b\"]\nkind = \"claude-code\"\n";
+        let bad_name = "[providers.\"a b\"]\nbase_url = \"http://x\"\n";
         assert!(matches!(
             Config::parse(bad_name, Path::new("c")),
             Err(ConfigError::BadProviderName(_))
+        ));
+        assert!(matches!(
+            parse("[providers.claude-code]\nbase_url = \"http://x\"\n"),
+            Err(ConfigError::ReservedProviderName(_))
+        ));
+        // Speech roles run locally without a provider; the others need one.
+        parse("[roles.tts]\nmodel = \"kokoro\"\n").unwrap();
+        assert!(matches!(
+            parse("[roles.router]\nmodel = \"m\"\n"),
+            Err(ConfigError::NoProvider(_))
+        ));
+        assert!(matches!(
+            parse("[roles.router]\nprovider = \"claude-code\"\n"),
+            Err(ConfigError::CantServe { .. })
+        ));
+        let c = parse("[roles.agent]\nprovider = \"claude-code\"\n").unwrap();
+        assert!(matches!(
+            c.role_provider("agent"),
+            Some((_, Provider::ClaudeCode { .. }))
         ));
     }
 

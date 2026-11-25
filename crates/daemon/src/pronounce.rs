@@ -73,10 +73,10 @@ impl Pronouncer {
         let build = || -> anyhow::Result<(Client, String)> {
             let role = config.roles.router.as_ref().context("no [roles.router]")?;
             let model = role.model.clone().context("[roles.router] has no model")?;
-            Ok((
-                Client::from_provider(&role.provider, &config.providers[&role.provider])?,
-                model,
-            ))
+            let (name, provider) = config
+                .role_provider("router")
+                .context("no router provider")?;
+            Ok((Client::from_provider(&name, &provider)?, model))
         };
         match build() {
             Ok((client, model)) => Some(Self::spawn(
@@ -428,8 +428,8 @@ mod tests {
     async fn live_lookup() {
         let config = Config::load(&Config::default_path().unwrap()).unwrap();
         let role = config.roles.router.as_ref().unwrap();
-        let client =
-            Client::from_provider(&role.provider, &config.providers[&role.provider]).unwrap();
+        let (name, provider) = config.role_provider("router").unwrap();
+        let client = Client::from_provider(&name, &provider).unwrap();
         let words: Vec<String> = [
             "Hyprland",
             "nginx",

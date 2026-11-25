@@ -37,9 +37,9 @@ public:
     void setInputGain(double gain);
 
     // Queries for the role pickers; `error` is empty on success.
-    using ProvidersReply = std::function<void(const QStringList &providers, const QString &error)>;
     using ChoicesReply = std::function<void(const ChoiceList &choices, const QString &error)>;
-    void listProviders(const QString &role, ProvidersReply done);
+    // (name, label) pairs; speech roles list none (unset means local speech).
+    void listProviders(const QString &role, ChoicesReply done);
     // An empty provider (or model) is the role's default.
     void listModels(const QString &role, const QString &provider, ChoicesReply done);
     void listVoices(const QString &provider, const QString &model, ChoicesReply done);
