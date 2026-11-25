@@ -163,6 +163,31 @@ impl Settings {
             .map_err(|_| fdo::Error::Failed("engine is not running".into()))
     }
 
+    async fn get_input_gain(&self) -> f64 {
+        self.shared.lock().unwrap().input_gain
+    }
+
+    async fn set_input_gain(&self, gain: f64) -> fdo::Result<()> {
+        if !(0.0..=1.0).contains(&gain) {
+            return Err(fdo::Error::InvalidArgs(format!(
+                "gain {gain} is not between 0 and 1"
+            )));
+        }
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(Command::SetInputGain {
+                gain: gain as f32,
+                reply,
+            })
+            .map_err(|_| fdo::Error::Failed("engine is not running".into()))?;
+        rx.await
+            .map_err(|_| fdo::Error::Failed("engine dropped the request".into()))?
+            .map_err(fdo::Error::Failed)
+    }
+
+    #[zbus(signal)]
+    pub async fn input_gain_changed(emitter: &SignalEmitter<'_>, gain: f64) -> zbus::Result<()>;
+
     #[zbus(signal)]
     pub async fn input_level(
         emitter: &SignalEmitter<'_>,

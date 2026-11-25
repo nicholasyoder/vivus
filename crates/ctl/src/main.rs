@@ -70,6 +70,8 @@ enum SettingsCmd {
     Devices,
     /// Show the mic level (what speech recognition hears) until Ctrl+C.
     Meter,
+    /// Print the mic's gain (its PipeWire volume, 0 to 1), or set it.
+    Gain { value: Option<f64> },
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -153,6 +155,21 @@ async fn settings(conn: &zbus::Connection, action: SettingsCmd) -> anyhow::Resul
             for (name, description, is_default, direction) in devices {
                 let mark = if is_default { "*" } else { " " };
                 println!("{direction:<6} {mark} {name}\n           {description}");
+            }
+        }
+        SettingsCmd::Gain { value: Some(v) } => proxy
+            .set_input_gain(v)
+            .await
+            .context("talking to vivus-daemon (is it running?)")?,
+        SettingsCmd::Gain { value: None } => {
+            let gain = proxy
+                .get_input_gain()
+                .await
+                .context("talking to vivus-daemon (is it running?)")?;
+            if gain < 0.0 {
+                println!("unknown");
+            } else {
+                println!("{gain:.2}");
             }
         }
         SettingsCmd::Meter => {

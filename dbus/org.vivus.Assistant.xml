@@ -101,5 +101,20 @@
       <arg name="peak" type="d"/>
       <arg name="clipped" type="b"/>
     </signal>
+
+    <!-- The volume of the mic Vivus records from (audio.input, else the system
+         default source), 0 to 1 as mixers show it (cubic). Not a config key:
+         WirePlumber saves it per device. Negative while unknown. -->
+    <method name="GetInputGain">
+      <arg name="gain" type="d" direction="out"/>
+    </method>
+    <!-- Sets it on the device (the card's route, like a mixer does), so it persists. -->
+    <method name="SetInputGain">
+      <arg name="gain" type="d" direction="in"/>
+    </method>
+    <!-- When it changes: from SetInputGain, another app or mixer, or a different input. -->
+    <signal name="InputGainChanged">
+      <arg name="gain" type="d"/>
+    </signal>
   </interface>
 </node>

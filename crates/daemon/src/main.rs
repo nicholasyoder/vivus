@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 use tracing_subscriber::EnvFilter;
 use vivus_core::Config;
 
-use crate::engine::{Command, ConfigFile, Engine, Shared};
+use crate::engine::{Command, ConfigFile, Engine, Services, Shared};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -41,6 +41,7 @@ async fn main() -> anyhow::Result<()> {
 
     let shared = Arc::new(Mutex::new(Shared {
         config_json: config.to_json(),
+        input_gain: -1.0,
         ..Default::default()
     }));
     let (tx, rx) = mpsc::unbounded_channel();
@@ -96,10 +97,18 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .map(|c| Arc::new(c) as clipboard::SharedClipboard);
 
-    let devices_tx = tx.clone();
-    let _devices = vivus_audio::Devices::spawn(move |list| {
-        let _ = devices_tx.send(Command::AudioDevices(list));
-    })
+    let (devices_tx, volume_tx) = (tx.clone(), tx.clone());
+    let devices = vivus_audio::Devices::spawn(
+        move |list| {
+            let _ = devices_tx.send(Command::AudioDevices(list));
+        },
+        move |name, volume| {
+            let _ = volume_tx.send(Command::SourceVolume {
+                name: name.into(),
+                volume,
+            });
+        },
+    )
     .inspect_err(|e| tracing::warn!("audio device list unavailable: {e:#}"))
     .ok();
 
@@ -112,8 +121,11 @@ async fn main() -> anyhow::Result<()> {
             conn,
             tx,
             shared,
-            windows,
-            clipboard,
+            Services {
+                windows,
+                clipboard,
+                devices,
+            },
         )
         .run(rx),
     );

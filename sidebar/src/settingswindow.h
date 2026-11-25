@@ -34,6 +34,7 @@ private:
     void fillDevices(QComboBox *combo, const QString &direction, const QString &path);
     void onDeviceActivated(QComboBox *combo, const QString &path);
     void showLevel(double peak, bool clipped);
+    void updateGain();
     void showError(const QString &path, const QString &message);
     // A slider or spin box: label follows at once, the write waits for a pause.
     QTimer *debounce(std::function<void()> commit);
@@ -44,8 +45,10 @@ private:
     QComboBox *m_input;
     QComboBox *m_output;
     QProgressBar *m_level;
-    QLabel *m_clip;
     QTimer *m_clipHold;
+    QSlider *m_gain;
+    QLabel *m_gainLabel;
+    QTimer *m_gainCommit;
     QTimer *m_meterLease;
     double m_levelDb = -60;
     QDoubleSpinBox *m_silence;

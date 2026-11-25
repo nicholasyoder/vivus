@@ -36,6 +36,8 @@ A new `org.vivus.Settings` interface on `/org/vivus` (contract first, as usual):
   only touches comments emits nothing).
 - `MeterInput()`: send `InputLevel(d peak, b clipped)` about 20 times a second
   for the next 5 s, keeping the mic open meanwhile (see [Level meter](#level-meter)).
+- `GetInputGain() → d`, `SetInputGain(d)`, `InputGainChanged(d)`: the mic's
+  volume (see [Input gain](#input-gain)).
 - `ListAudioDevices() → a(ssbs)`: id, description, is-default, direction
   (`source` / `sink`). `AudioDevicesChanged` is emitted on hotplug.
 - `ListModels(s role) → a(ss)`: model id, label. For local speech this lists
@@ -104,6 +106,33 @@ volume WirePlumber restored for the app; changing the app's volume in a mixer
 lasts until the next reply. `audio.duck_volume` changes apply at once, even
 mid-duck.
 
+## Input gain
+
+The gain slider sets the PipeWire volume of the source the mic stream
+records from (`audio.input` if it's connected, else the system default), 0 to
+1 on the cubic scale mixers show. It isn't a config key: WirePlumber already
+saves a volume per device and route, and a second copy in our config would
+fight it. `vivusctl settings gain [value]` gets or sets it.
+
+- **Writing.** For a sound card's source, the volume is set on the card's
+  active input `Route` (index and profile device from the node's
+  `card.profile.device`), with `save: true`, which is what pavucontrol and
+  `wpctl set-volume` do. That moves the hardware mixer (`Capture`, and the
+  `Mic Boost` steps above it) and WirePlumber writes it to
+  `~/.local/state/wireplumber/default-routes`. Setting `channelVolumes` in
+  the node's Props instead is accepted but ignored by ALSA nodes (checked
+  2026-11-24). Sources without a card (virtual, filters) get node Props.
+- **Reading.** `vivus-devices` subscribes to each source's Props and reports
+  `channelVolumes` (loudest channel, cube root) on every change, so the slider
+  follows a mixer, alsamixer, or another app's automatic gain control.
+  `card.profile.device` isn't in the registry's global props, so it comes from
+  the node's info (only events whose change mask includes props).
+- **Why not alsamixer.** A change made only in alsamixer is overwritten when
+  WirePlumber re-applies its saved route volume (device reopened, port change,
+  suspend). Apps with WebRTC AGC (Chrome, Discord, Zoom) also push the mic
+  toward 100% while they use it; pipewire-pulse's `block-source-volume` quirk
+  stops that per app.
+
 ## Level meter
 
 The meter shows what STT hears: the capture stream after echo cancellation,
@@ -112,8 +141,8 @@ thread while metering is on, and the engine turns each into an `InputLevel`
 signal. Metering is a lease, not on/off: each `MeterInput` call extends it to
 5 s from now, so a client that crashes or forgets can't leave the mic open
 and the bus busy. The settings window calls it every 2 s while shown.
-`clipped` means a sample reached 0.99; the window holds its CLIP light for
-1.5 s. Metering holds the stream open like listening does (relevant only
+`clipped` means a sample reached 0.99; the window turns the meter red for
+1.5 s (the gain slider sits right below it). Metering holds the stream open like listening does (relevant only
 with `keep_mic_open = false`).
 
 ## Settings window
@@ -125,6 +154,8 @@ sidebar's Settings button or `vivus-sidebar --settings`, and closing it
 doesn't quit the app. It shares the sidebar's process and QSS (`#VivusSettings`
 and the object names listed in `sidebar.qss`).
 
+- Gain applies 100 ms after the slider stops, so you can watch the meter
+  while dragging; it follows outside changes except mid-drag.
 - Device pickers: "System default (…)" is the unset value (`Reset`); a
   configured device that's unplugged stays listed as "(not connected)".
 - Sliders and the silence spin box write after a 250 ms pause, so dragging

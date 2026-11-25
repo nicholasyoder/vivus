@@ -52,6 +52,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] `org.vivus.Settings` D-Bus interface (`Get`/`Set`/`Reset`/`Changed`); daemon writes config with `toml_edit`, watches the file and reloads live; `vivusctl settings` (2026-11-24, `5a7ea5c`) — [settings.md](settings.md#d-bus)
 - [x] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon (2026-11-24, `fe8d56c`) — [settings.md](settings.md#audio-devices)
 - [x] Settings window (its own toplevel): input/output device pickers, mic level meter with a clip indicator, end-of-turn silence, speech volume, duck volume; all applied live (2026-11-24, `e4be0e9`) — [settings.md](settings.md#settings-window)
+- [ ] Mic gain slider in Settings (the input's PipeWire volume, saved by WirePlumber; follows other apps' changes); level meter turns red when it clips — [settings.md](settings.md#input-gain)
 - [ ] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice — [settings.md](settings.md#roles-and-providers)
 
 ### 1e: Smarter answers

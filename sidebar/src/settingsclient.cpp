@@ -16,6 +16,10 @@ SettingsClient::SettingsClient(QObject *parent)
         emit devicesChanged();
     });
     connect(m_iface, &OrgVivusSettingsInterface::InputLevel, this, &SettingsClient::inputLevel);
+    connect(m_iface, &OrgVivusSettingsInterface::InputGainChanged, this, [this](double gain) {
+        m_inputGain = gain;
+        emit inputGainChanged();
+    });
 }
 
 QJsonValue SettingsClient::value(const QString &path) const
@@ -37,6 +41,15 @@ void SettingsClient::refresh()
             return;
         m_devices = reply.value();
         emit devicesChanged();
+    });
+    auto *g = new QDBusPendingCallWatcher(m_iface->GetInputGain(), this);
+    connect(g, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+        QDBusPendingReply<double> reply = *w;
+        if (reply.isError())
+            return;
+        m_inputGain = reply.value();
+        emit inputGainChanged();
     });
 }
 
@@ -61,6 +74,12 @@ void SettingsClient::set(const QString &path, const QVariant &value)
 void SettingsClient::reset(const QString &path)
 {
     watch(path, m_iface->Reset(path));
+}
+
+void SettingsClient::setInputGain(double gain)
+{
+    // Not a config key; a refusal still reports under a readable name.
+    watch(QStringLiteral("input gain"), m_iface->SetInputGain(gain));
 }
 
 void SettingsClient::meterInput()

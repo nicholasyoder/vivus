@@ -64,21 +64,25 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
     m_level->setRange(int(MeterFloorDb * 10), 0);
     m_level->setValue(int(MeterFloorDb * 10));
     m_level->setTextVisible(false);
-    m_level->setToolTip(tr("What speech recognition hears, after echo cancellation"));
-    m_clip = new QLabel(tr("CLIP"), m_form);
-    m_clip->setObjectName(QStringLiteral("ClipIndicator"));
-    m_clip->setProperty("clipped", false);
-    m_clip->setToolTip(tr("Lights up when the input hits full scale: turn the mic's gain down"));
+    m_level->setToolTip(tr("What speech recognition hears, after echo cancellation. "
+                           "Turns red when it clips: turn the gain down."));
+    m_level->setProperty("clipped", false);
     m_clipHold = new QTimer(this);
     m_clipHold->setSingleShot(true);
     m_clipHold->setInterval(1500);
     connect(m_clipHold, &QTimer::timeout, this, [this] {
-        m_clip->setProperty("clipped", false);
-        repolish(m_clip);
+        m_level->setProperty("clipped", false);
+        repolish(m_level);
     });
-    auto *levelRow = new QHBoxLayout;
-    levelRow->addWidget(m_level, 1);
-    levelRow->addWidget(m_clip);
+
+    m_gain = percentSlider(QStringLiteral("InputGain"), m_form);
+    m_gain->setToolTip(tr("The microphone's volume in PipeWire, the same one system mixers show. "
+                          "Saved per device by the system, not in Vivus's config."));
+    m_gainLabel = new QLabel(m_form);
+    m_gainLabel->setMinimumWidth(40);
+    auto *gainRow = new QHBoxLayout;
+    gainRow->addWidget(m_gain, 1);
+    gainRow->addWidget(m_gainLabel);
 
     m_silence = new QDoubleSpinBox(m_form);
     m_silence->setObjectName(QStringLiteral("EndOfTurnSilence"));
@@ -92,7 +96,8 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
     auto *mic = new QGroupBox(tr("Microphone"), m_form);
     auto *micForm = new QFormLayout(mic);
     micForm->addRow(tr("Input"), m_input);
-    micForm->addRow(tr("Level"), levelRow);
+    micForm->addRow(tr("Level"), m_level);
+    micForm->addRow(tr("Gain"), gainRow);
     micForm->addRow(tr("End of turn after"), m_silence);
 
     // Speech
@@ -187,7 +192,16 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
         duckCommit->start();
     });
 
+    // Applies as you drag (a short pause), so you can watch the meter.
+    m_gainCommit = debounce([this] { m_settings->setInputGain(m_gain->value() / 100.0); });
+    m_gainCommit->setInterval(100);
+    connect(m_gain, &QSlider::valueChanged, this, [this](int v) {
+        m_gainLabel->setText(tr("%1%").arg(v));
+        m_gainCommit->start();
+    });
+
     // Daemon
+    connect(m_settings, &SettingsClient::inputGainChanged, this, &SettingsWindow::updateGain);
     connect(m_settings, &SettingsClient::configChanged, this, &SettingsWindow::updateConfig);
     connect(m_settings, &SettingsClient::devicesChanged, this, &SettingsWindow::updateDevices);
     connect(m_settings, &SettingsClient::inputLevel, this, &SettingsWindow::showLevel);
@@ -312,10 +326,29 @@ void SettingsWindow::showLevel(double peak, bool clipped)
     m_levelDb = std::max(db, m_levelDb - MeterFallDb);
     m_level->setValue(int(m_levelDb * 10));
     if (clipped) {
-        m_clip->setProperty("clipped", true);
-        repolish(m_clip);
+        if (!m_clipHold->isActive()) {
+            m_level->setProperty("clipped", true);
+            repolish(m_level);
+        }
         m_clipHold->start();
     }
+}
+
+// Follows changes from anywhere (a mixer, another app's auto gain), except mid-drag.
+void SettingsWindow::updateGain()
+{
+    const double gain = m_settings->inputGain();
+    m_gain->setEnabled(gain >= 0);
+    if (gain < 0) {
+        m_gainLabel->setText(tr("–"));
+        return;
+    }
+    if (m_gain->isSliderDown() || m_gainCommit->isActive())
+        return;
+    const int v = int(std::lround(gain * 100));
+    const QSignalBlocker b(m_gain);
+    m_gain->setValue(v);
+    m_gainLabel->setText(tr("%1%").arg(v));
 }
 
 void SettingsWindow::showError(const QString &path, const QString &message)

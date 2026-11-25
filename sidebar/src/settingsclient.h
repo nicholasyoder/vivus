@@ -30,11 +30,15 @@ public:
     void reset(const QString &path);
     // Asks for inputLevel signals for the next 5 s.
     void meterInput();
+    // The input's PipeWire volume, 0 to 1 as mixers show it; negative while unknown.
+    double inputGain() const { return m_inputGain; }
+    void setInputGain(double gain);
 
 signals:
     void configChanged();
     void devicesChanged();
     void inputLevel(double peak, bool clipped);
+    void inputGainChanged();
     void error(const QString &path, const QString &message);
 
 private:
@@ -44,4 +48,5 @@ private:
     OrgVivusSettingsInterface *m_iface;
     QJsonObject m_config;
     AudioDeviceList m_devices;
+    double m_inputGain = -1;
 };

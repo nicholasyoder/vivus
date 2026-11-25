@@ -2,6 +2,7 @@
 //! router runs as a task whose events come back as `Command::Reply`, tagged
 //! with a generation so events from a cancelled reply are ignored.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -33,6 +34,8 @@ pub struct Shared {
     /// The effective config, for `org.vivus.Settings.Get`.
     pub config_json: String,
     pub audio_devices: Vec<vivus_dbus::AudioDevice>,
+    /// The input's volume, for `GetInputGain`; negative while unknown.
+    pub input_gain: f64,
 }
 
 /// Where the config lives and what it last contained, to tell our own writes
@@ -79,10 +82,27 @@ pub enum Command {
         peak: f32,
         clipped: bool,
     },
+    /// A source's volume changed (or was first seen).
+    SourceVolume {
+        name: String,
+        volume: f32,
+    },
+    /// `org.vivus.Settings.SetInputGain`.
+    SetInputGain {
+        gain: f32,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
 }
 
 /// How long one `MeterInput` call keeps levels coming.
 const METER_LEASE: Duration = Duration::from_secs(5);
+
+/// Desktop and audio services, each absent if it failed to start.
+pub struct Services {
+    pub windows: Option<SharedWindows>,
+    pub clipboard: Option<SharedClipboard>,
+    pub devices: Option<vivus_audio::Devices>,
+}
 
 /// The reply in progress.
 struct Reply {
@@ -113,6 +133,11 @@ pub struct Engine {
     windows: Option<SharedWindows>,
     clipboard: Option<SharedClipboard>,
     audio_devices: Vec<vivus_audio::Device>,
+    devices: Option<vivus_audio::Devices>,
+    /// Each source's volume by node name.
+    source_volumes: HashMap<String, f32>,
+    /// Last sent as `InputGainChanged`.
+    input_gain: Option<f32>,
     /// Metering until then.
     meter_until: Option<Instant>,
 }
@@ -124,9 +149,13 @@ impl Engine {
         conn: Connection,
         tx: UnboundedSender<Command>,
         shared: Arc<Mutex<Shared>>,
-        windows: Option<SharedWindows>,
-        clipboard: Option<SharedClipboard>,
+        services: Services,
     ) -> Self {
+        let Services {
+            windows,
+            clipboard,
+            devices,
+        } = services;
         Self {
             config,
             config_file,
@@ -143,6 +172,9 @@ impl Engine {
             windows,
             clipboard,
             audio_devices: Vec::new(),
+            devices,
+            source_volumes: HashMap::new(),
+            input_gain: None,
             meter_until: None,
         }
     }
@@ -155,6 +187,7 @@ impl Engine {
                     | Command::InputLevel { .. }
                     | Command::MeterInput
                     | Command::MeterCheck
+                    | Command::SourceVolume { .. }
                     | Command::Reply {
                         event: ReplyEvent::Text(_),
                         ..
@@ -274,6 +307,21 @@ impl Engine {
                         .await?;
                 }
             }
+            Command::SourceVolume { name, volume } => {
+                self.source_volumes.insert(name, volume);
+                self.update_input_gain().await?;
+            }
+            Command::SetInputGain { gain, reply } => {
+                let result = match (&self.devices, self.input_name()) {
+                    (Some(devices), Some(name)) => {
+                        devices.set_volume(name, gain.clamp(0.0, 1.0));
+                        Ok(())
+                    }
+                    (None, _) => Err("audio devices are unavailable".into()),
+                    (_, None) => Err("no input device".into()),
+                };
+                let _ = reply.send(result);
+            }
             Command::Reply { generation, event } => {
                 if self
                     .reply
@@ -285,6 +333,46 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    /// The source the mic stream records from: `audio.input` if it's
+    /// connected (else WirePlumber has moved us to the default), else the default.
+    fn input_name(&self) -> Option<&str> {
+        let sources = || {
+            self.audio_devices
+                .iter()
+                .filter(|d| d.direction == vivus_audio::Direction::Source)
+        };
+        self.config
+            .audio
+            .input
+            .as_deref()
+            .filter(|i| sources().any(|d| d.name == *i))
+            .or_else(|| sources().find(|d| d.is_default).map(|d| d.name.as_str()))
+    }
+
+    /// Emits `InputGainChanged` if the input's volume, or the input, changed.
+    async fn update_input_gain(&mut self) -> zbus::Result<()> {
+        let gain = self
+            .input_name()
+            .and_then(|n| self.source_volumes.get(n))
+            .copied();
+        let same = match (gain, self.input_gain) {
+            (Some(a), Some(b)) => (a - b).abs() < 1e-4,
+            (a, b) => a.is_none() && b.is_none(),
+        };
+        if same {
+            return Ok(());
+        }
+        self.input_gain = gain;
+        let wire = gain.map_or(-1.0, f64::from);
+        self.shared.lock().unwrap().input_gain = wire;
+        let iface = self
+            .conn
+            .object_server()
+            .interface::<_, service::Settings>(vivus_dbus::PATH)
+            .await?;
+        service::Settings::input_gain_changed(iface.signal_emitter(), wire).await
     }
 
     fn schedule_meter_check(&self, after: Duration) {
@@ -489,6 +577,9 @@ impl Engine {
         {
             v.reconnect(&self.config.audio);
         }
+        if changed("audio.input") {
+            self.update_input_gain().await?;
+        }
         if changed("audio.end_of_turn_silence")
             && let Some(v) = &self.voice
         {
@@ -552,6 +643,7 @@ impl Engine {
         tracing::debug!("audio devices: {wire:?}");
         self.shared.lock().unwrap().audio_devices = wire.clone();
         self.audio_devices = list;
+        self.update_input_gain().await?;
         let iface = self
             .conn
             .object_server()

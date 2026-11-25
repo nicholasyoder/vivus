@@ -65,4 +65,9 @@ pub trait Settings {
     fn meter_input(&self) -> zbus::Result<()>;
     #[zbus(signal)]
     fn input_level(&self, peak: f64, clipped: bool) -> zbus::Result<()>;
+
+    fn get_input_gain(&self) -> zbus::Result<f64>;
+    fn set_input_gain(&self, gain: f64) -> zbus::Result<()>;
+    #[zbus(signal)]
+    fn input_gain_changed(&self, gain: f64) -> zbus::Result<()>;
 }

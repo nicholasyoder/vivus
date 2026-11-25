@@ -1,8 +1,8 @@
 /* Default vivus-sidebar style. Copy to ~/.config/vivus/sidebar.qss to customize.
    Selectors: #VivusSidebar, #StateDot, #StateLabel, #History, #Document,
    #Transcript, #Input, #TalkButton, #SettingsButton, #QuitButton.
-   Settings window: #VivusSettings, #InputDevice, #InputLevel, #ClipIndicator
-   (`clipped` property), #EndOfTurnSilence, #OutputDevice, #SpeechVolume,
+   Settings window: #VivusSettings, #InputDevice, #InputLevel (`clipped`
+   property), #InputGain, #EndOfTurnSilence, #OutputDevice, #SpeechVolume,
    #DuckVolume, #SettingsStatus, #OpenConfigButton.
    #VivusSidebar and #StateDot carry a `state` property:
    idle | listening | thinking | speaking | disconnected. */
@@ -72,17 +72,11 @@
     border-radius: 4px;
     background: #40b060;
 }
-
-#ClipIndicator {
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-size: 8pt;
-    font-weight: bold;
-    color: palette(placeholder-text);
+#InputLevel[clipped="true"] {
+    border-color: #e05050;
 }
-#ClipIndicator[clipped="true"] {
+#InputLevel[clipped="true"]::chunk {
     background: #e05050;
-    color: white;
 }
 
 #SettingsStatus {
