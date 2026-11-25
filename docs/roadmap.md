@@ -61,7 +61,7 @@ everyday use work comes first, then smarter answers, then polish.
 
 ### 1e: Smarter answers
 
-- [x] Conversation memory: rolling history so follow-ups work; sliding window bounded by turns, characters and idle time (2026-11-25, `HASH`) — [inference.md](inference.md#conversation-memory)
+- [x] Conversation memory: rolling history so follow-ups work; sliding window bounded by turns, characters and idle time (2026-11-25, `91fe492`) — [inference.md](inference.md#conversation-memory)
 - [ ] Context providers: time/date, locale, active window, clipboard — [architecture.md](architecture.md#daemon-internals)
 - [ ] `web_search` and `fetch_url` with a configurable provider; sourced sidebar documents — [inference.md](inference.md#web-access)
 - [ ] Rate limits: retry a 429 that asks for a short wait (Groq's free tier says "try again in 2 s") instead of apologising
