@@ -43,12 +43,12 @@ everyday use work comes first, then smarter answers, then polish.
 
 - [x] App launching: parse `.desktop` files, fuzzy-match the spoken name, launch with an `xdg-activation` token (2026-11-24, `f240169`) — [desktop-control.md](desktop-control.md#app-launching)
 - [x] Windows: list, switch/close/minimize with `wlr-foreign-toplevel-management` (read-only `ext-foreign-toplevel-list-v1` fallback); open windows as router context; prefetch focused titles (2026-11-24, `35d7f01`) — [desktop-control.md](desktop-control.md#windows)
-- [ ] Push-to-talk and toggle-listen through the `GlobalShortcuts` portal (`vivusctl` stays the fallback)
+- [x] Push-to-talk, toggle-listen and toggle-sidebar through the `GlobalShortcuts` portal (`vivusctl` stays the fallback) (2026-11-24, `HASH`) — [desktop-control.md](desktop-control.md#global-shortcuts)
 - [ ] Clipboard read/write via `wlr-data-control`
 
 ### 1d: Everyday setup
 
-- [ ] systemd user unit for the daemon; `.desktop` entry for the sidebar; model download via `vivusctl` instead of `scripts/fetch-models.sh`
+- [ ] systemd user unit for the daemon; `.desktop` entry `org.vivus.Vivus` (the portal app ID) for the sidebar; model download via `vivusctl` instead of `scripts/fetch-models.sh`
 - [ ] `org.vivus.Settings` D-Bus interface (`Get`/`Set`/`Changed`); daemon writes config with `toml_edit`, watches the file and reloads live — [settings.md](settings.md#d-bus)
 - [ ] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon — [settings.md](settings.md#audio-devices)
 - [ ] Sidebar settings page: input/output device pickers, mic level meter with a clip indicator, end-of-turn silence, speech volume, duck volume — [settings.md](settings.md)

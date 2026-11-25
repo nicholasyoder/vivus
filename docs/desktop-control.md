@@ -1,7 +1,7 @@
 # Desktop control
 
-Acting on the desktop through standard interfaces: launching apps and
-managing windows, and later the clipboard. Phase 2's in-app control is in
+Acting on the desktop through standard interfaces: global shortcuts,
+launching apps and managing windows, and later the clipboard. Phase 2's in-app control is in
 [screen-awareness.md](screen-awareness.md).
 
 ## App launching
@@ -114,3 +114,40 @@ retitles itself on every command doesn't flood the lookups).
 Try it without the daemon: `cargo run -p vivus-wayland --example windows`
 lists the windows and watches focus for 5 s, and
 `-- <activate|close|minimize> <id>` acts on one.
+
+## Global shortcuts
+
+The daemon binds its keys through `org.freedesktop.portal.GlobalShortcuts`
+(`crates/daemon/src/shortcuts.rs`), so any desktop with that portal works
+without compositor config. Triggers come from `[shortcuts]` in the config
+(shortcuts-spec format; `""` leaves one unbound):
+
+| Shortcut | Default | Does |
+| --- | --- | --- |
+| `push-to-talk` | `LOGO+space` | Press → `StartListening`, release → `StopListening` |
+| `toggle-listen` | `LOGO+SHIFT+space` | `ToggleListen` (conversation mode) |
+| `toggle-sidebar` | `LOGO+v` | `SidebarVisibilityRequested("toggle")` |
+
+**Session.** The portal client has its own session-bus connection, since the
+session and app ID belong to the connection. It first calls
+`org.freedesktop.host.portal.Registry.Register("org.vivus.Vivus")`:
+xdg-desktop-portal 1.19+ wants an app ID for unsandboxed apps. That fails
+until `org.vivus.Vivus.desktop` is installed (see the 1d desktop-entry item),
+and Biome's backend binds anyway. Then `CreateSession` and `BindShortcuts`,
+each answered by a `Request` `Response` that we subscribe to before calling.
+The bound triggers are logged; anything refused or already taken gets a
+warning. If the portal restarts or closes the session, the daemon rebinds, and
+a push-to-talk held at that moment is released.
+
+**Backends.** Biome binds the preferred triggers straight away with no dialog,
+skipping any already in use, and sends `Deactivated` on release, which
+push-to-talk needs. KDE and GNOME show a dialog on first bind and keep what
+the user picks, so the config values are only suggestions there. Without the
+portal (sway, Hyprland without `xdg-desktop-portal-hyprland`'s shortcuts), the
+log says so and `vivusctl toggle-listen` / `push-to-talk start|stop` bound in
+the compositor are the fallback.
+
+Tested on Biome 2026-11-24: holding `Meta+Space` listened until release and
+then answered; `Shift+Meta+Space` started and stopped conversation mode;
+`Meta+V` toggled the sidebar. The rebind after a portal restart hasn't been
+exercised.

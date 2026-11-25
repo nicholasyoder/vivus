@@ -18,6 +18,7 @@ vivus-apps = { path = "crates/apps" }
 vivus-wayland = { path = "crates/wayland" }
 
 anyhow = "1"
+futures-util = "0.3"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
 serde = { version = "1", features = ["derive"] }

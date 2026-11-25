@@ -31,7 +31,32 @@ pub struct Config {
     #[serde(default)]
     pub audio: Audio,
     #[serde(default)]
+    pub shortcuts: Shortcuts,
+    #[serde(default)]
     pub debug: Debug,
+}
+
+/// Triggers requested from the `GlobalShortcuts` portal, in the shortcuts-spec
+/// format (`LOGO+space`). Empty leaves one unbound. Backends with a dialog
+/// treat these as suggestions.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Shortcuts {
+    /// Hold to talk; release to send.
+    pub push_to_talk: String,
+    /// Start or stop conversation mode (end of turn by silence).
+    pub toggle_listen: String,
+    pub toggle_sidebar: String,
+}
+
+impl Default for Shortcuts {
+    fn default() -> Self {
+        Self {
+            push_to_talk: "LOGO+space".into(),
+            toggle_listen: "LOGO+SHIFT+space".into(),
+            toggle_sidebar: "LOGO+v".into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

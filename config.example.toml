@@ -81,6 +81,15 @@ duck_volume = 0.3
 # ~/.local/share/vivus/recordings, with transcripts.tsv. For debugging accuracy.
 record_utterances = false
 
+# Global shortcuts, requested from the desktop's GlobalShortcuts portal at
+# startup (shortcuts-spec format). "" leaves one unbound. On desktops whose
+# portal asks you to confirm or pick keys, these are only suggestions. Without
+# the portal, bind vivusctl commands to keys in your compositor instead.
+[shortcuts]
+push_to_talk = "LOGO+space"
+toggle_listen = "LOGO+SHIFT+space"
+toggle_sidebar = "LOGO+v"
+
 [debug]
 # Transcribe what you say but don't answer it (no LLM call, no speech), to
 # test recognition quickly. Pairs well with [audio] record_utterances.

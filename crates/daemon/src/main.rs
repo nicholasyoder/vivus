@@ -3,6 +3,7 @@ mod engine;
 mod pronounce;
 mod router;
 mod service;
+mod shortcuts;
 mod speaker;
 mod voice;
 mod windows;
@@ -68,6 +69,8 @@ async fn main() -> anyhow::Result<()> {
     .inspect_err(|e| tracing::warn!("window control unavailable: {e:#}"))
     .ok()
     .map(|w| Arc::new(w) as windows::SharedWindows);
+
+    shortcuts::spawn(&config.shortcuts, tx.clone(), conn.clone());
 
     let engine = tokio::spawn(Engine::new(config, conn, tx, shared, windows).run(rx));
 
