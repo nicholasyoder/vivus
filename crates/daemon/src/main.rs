@@ -1,4 +1,5 @@
 mod apps;
+mod clipboard;
 mod engine;
 mod pronounce;
 mod router;
@@ -70,9 +71,14 @@ async fn main() -> anyhow::Result<()> {
     .ok()
     .map(|w| Arc::new(w) as windows::SharedWindows);
 
+    let clipboard = vivus_wayland::Clipboard::connect()
+        .inspect_err(|e| tracing::warn!("clipboard unavailable: {e:#}"))
+        .ok()
+        .map(|c| Arc::new(c) as clipboard::SharedClipboard);
+
     shortcuts::spawn(&config.shortcuts, tx.clone(), conn.clone());
 
-    let engine = tokio::spawn(Engine::new(config, conn, tx, shared, windows).run(rx));
+    let engine = tokio::spawn(Engine::new(config, conn, tx, shared, windows, clipboard).run(rx));
 
     let mut sigterm = signal(SignalKind::terminate())?;
     tokio::select! {

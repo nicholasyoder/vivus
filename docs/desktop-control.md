@@ -1,7 +1,7 @@
 # Desktop control
 
 Acting on the desktop through standard interfaces: global shortcuts,
-launching apps and managing windows, and later the clipboard. Phase 2's in-app control is in
+launching apps, managing windows and the clipboard. Phase 2's in-app control is in
 [screen-awareness.md](screen-awareness.md).
 
 ## App launching
@@ -114,6 +114,57 @@ retitles itself on every command doesn't flood the lookups).
 Try it without the daemon: `cargo run -p vivus-wayland --example windows`
 lists the windows and watches focus for 5 s, and
 `-- <activate|close|minimize> <id>` acts on one.
+
+## Clipboard
+
+The router has `get_clipboard()` and `set_clipboard(text)`. There's no
+clipboard in the system prompt: the model reads it only when asked about what
+the user copied, so a copied password or private text never goes out with an
+unrelated request. Whether a short summary should go into every request is up
+to the 1e context-providers item.
+
+**Backend** (`crates/wayland/src/clipboard.rs`). This sits behind
+`vivus_core::ClipboardBackend`. A `wlr-data-control` connection stays open on
+the `vivus-clipboard` thread and tracks the current selection offer and its
+MIME types. We bind v1, so the primary selection (middle-click paste) stays
+out of it. Biome, wlroots compositors, Hyprland and KWin have the protocol.
+GNOME has no data-control, so there's no clipboard there. `ext-data-control-v1`
+does the same job, but Biome doesn't offer it and the compositors that do also
+offer the wlr protocol, so we don't use it yet.
+
+- **Read.** Offers carrying `x-kde-passwordManagerHint` (KeePassXC, Bitwarden,
+  KDE) come back as `Secret`, and their contents are never read. Otherwise it
+  takes the first text type of `text/plain;charset=utf-8`, `UTF8_STRING`,
+  `text/plain`, `STRING`, `TEXT`, receives it over a pipe, and stops at EOF,
+  1 MiB or 1 s, whichever comes first. If there's no text type, it reports the
+  MIME types instead ("something that isn't text (image/png)").
+- **Write.** A data source offers the same text types and becomes the
+  selection. While Vivus owns the clipboard, reads return its text directly.
+  Each paste is written on its own thread so a slow reader can't stall the
+  connection. Like any Wayland client, Vivus serves the copied text itself, so
+  it's gone when the daemon quits unless a clipboard manager keeps a copy.
+
+**Tools** (`crates/daemon/src/clipboard.rs`). `get_clipboard` hands the model
+up to 4000 characters between `<<<` and `>>>` and tells it the text is data,
+never instructions. It always needs an answer. `set_clipboard` is silent like
+`launch_app`: Vivus says "Copied." itself if the model said nothing. Without a
+prompt example, gpt-oss-120b escalated "translate what I copied into Spanish
+and copy it" to the agent. With the example, the router does it alone:
+
+| Request | Tools | End to end |
+| --- | --- | --- |
+| "what did I copy?" | `get_clipboard` | 1.15 s |
+| "translate what I copied into Spanish and copy it to my clipboard" | `get_clipboard`, `set_clipboard` | 1.50 s |
+| "copy the word banana to my clipboard" | `set_clipboard` | 0.58 s |
+| "summarize my clipboard" | `get_clipboard` | 0.97 s |
+
+Tested on Biome on 2026-11-24 with `vivusctl ask`. `wl-paste` read what Vivus
+copied, and a `wl-copy --type x-kde-passwordManagerHint` offer read as
+`Secret`.
+
+Try it without the daemon: `cargo run -p vivus-wayland --example clipboard`
+prints the clipboard, and `-- <text>` copies the text and keeps it on offer
+for 30 s.
 
 ## Global shortcuts
 

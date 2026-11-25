@@ -10,6 +10,7 @@ use vivus_core::{AssistantState, Config, DocumentStore};
 use vivus_speech::{Event, Mode};
 use zbus::Connection;
 
+use crate::clipboard::SharedClipboard;
 use crate::router::{ReplyEvent, Router};
 use crate::service;
 use crate::speaker::Speaker;
@@ -71,6 +72,7 @@ pub struct Engine {
     reply: Option<Reply>,
     generation: u64,
     windows: Option<SharedWindows>,
+    clipboard: Option<SharedClipboard>,
 }
 
 impl Engine {
@@ -80,6 +82,7 @@ impl Engine {
         tx: UnboundedSender<Command>,
         shared: Arc<Mutex<Shared>>,
         windows: Option<SharedWindows>,
+        clipboard: Option<SharedClipboard>,
     ) -> Self {
         Self {
             config,
@@ -94,6 +97,7 @@ impl Engine {
             reply: None,
             generation: 0,
             windows,
+            clipboard,
         }
     }
 
@@ -306,6 +310,7 @@ impl Engine {
         if self.router.is_none() {
             let mut router = Router::from_config(&self.config)?;
             router.windows = self.windows.clone();
+            router.clipboard = self.clipboard.clone();
             self.router = Some(Arc::new(router));
         }
         Ok(self.router.clone().unwrap())

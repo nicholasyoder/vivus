@@ -44,7 +44,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] App launching: parse `.desktop` files, fuzzy-match the spoken name, launch with an `xdg-activation` token (2026-11-24, `f240169`) — [desktop-control.md](desktop-control.md#app-launching)
 - [x] Windows: list, switch/close/minimize with `wlr-foreign-toplevel-management` (read-only `ext-foreign-toplevel-list-v1` fallback); open windows as router context; prefetch focused titles (2026-11-24, `35d7f01`) — [desktop-control.md](desktop-control.md#windows)
 - [x] Push-to-talk, toggle-listen and toggle-sidebar through the `GlobalShortcuts` portal (`vivusctl` stays the fallback) (2026-11-24, `f457e51`) — [desktop-control.md](desktop-control.md#global-shortcuts)
-- [ ] Clipboard read/write via `wlr-data-control`
+- [x] Clipboard read/write via `wlr-data-control`: `get_clipboard` / `set_clipboard` tools; password-manager secrets never read (2026-11-24, `HASH`) — [desktop-control.md](desktop-control.md#clipboard)
 
 ### 1d: Everyday setup
 
