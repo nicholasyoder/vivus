@@ -31,3 +31,4 @@ target_link_libraries(vivus-sidebar PRIVATE
 
 include(GNUInstallDirs)
 install(TARGETS vivus-sidebar RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES data/org.vivus.Vivus.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

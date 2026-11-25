@@ -31,7 +31,7 @@ pub enum Error {
     UnknownModel(String, String),
     #[error("unknown voice `{0}` (known: {1})")]
     UnknownVoice(String, String),
-    #[error("model files missing in {0} (run scripts/fetch-models.sh)")]
+    #[error("model files missing in {0} (run `vivusctl models fetch`)")]
     MissingFiles(std::path::PathBuf),
     #[error("sherpa-onnx failed to load {0}")]
     LoadFailed(String),

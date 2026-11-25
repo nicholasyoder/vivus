@@ -9,7 +9,7 @@ use vivus_core::{Window, WindowAction, WindowBackend};
 pub type SharedWindows = Arc<dyn WindowBackend>;
 
 /// Our own sidebar isn't something the user means by "this window".
-const SIDEBAR_APP_ID: &str = "vivus-sidebar";
+const SIDEBAR_APP_ID: &str = "org.vivus.Vivus";
 const ENOUGH: f32 = 0.6;
 const TIE: f32 = 0.05;
 /// Windows and title length in the context, to bound tokens per request.

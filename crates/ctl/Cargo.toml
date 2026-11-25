@@ -12,3 +12,9 @@ anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true
 zbus.workspace = true
+reqwest.workspace = true
+bzip2 = "0.6"
+tar = "0.4"
+
+[dev-dependencies]
+vivus-speech.workspace = true

@@ -25,7 +25,8 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("vivus-sidebar"));
-    app.setDesktopFileName(QStringLiteral("vivus-sidebar"));
+    // Also the Wayland app ID and the portal app ID the daemon registers.
+    app.setDesktopFileName(QStringLiteral("org.vivus.Vivus"));
 
     QCommandLineParser parser;
     parser.addHelpOption();

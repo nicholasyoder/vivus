@@ -2629,9 +2629,13 @@ name = "vivusctl"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bzip2 0.6.1",
  "clap",
+ "reqwest",
+ "tar",
  "tokio",
  "vivus-dbus",
+ "vivus-speech",
  "zbus",
 ]
 

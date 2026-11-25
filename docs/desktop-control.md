@@ -43,8 +43,8 @@ the working directory. `Terminal=true` apps go through `xdg-terminal-exec`,
 then `$TERMINAL`, then the first `TerminalEmulator` app. When a systemd user
 manager is running, the app runs as `systemd-run --user --scope` in
 `app-vivus-<id>-<random>.scope` (the XDG app-scope naming). That way it
-doesn't die with the daemon's unit once the daemon runs under systemd, and it
-shows up like apps started by other launchers. Without one, the app is
+doesn't share the daemon's cgroup (and die with it if the daemon is ever run
+as a unit), and it shows up like apps started by other launchers. Without one, the app is
 spawned directly in its own process group. `DBusActivatable` apps with no
 `Exec` aren't supported: none are installed here.
 
@@ -182,9 +182,10 @@ without compositor config. Triggers come from `[shortcuts]` in the config
 **Session.** The portal client has its own session-bus connection, since the
 session and app ID belong to the connection. It first calls
 `org.freedesktop.host.portal.Registry.Register("org.vivus.Vivus")`:
-xdg-desktop-portal 1.19+ wants an app ID for unsandboxed apps. That fails
-until `org.vivus.Vivus.desktop` is installed (see the 1d desktop-entry item),
-and Biome's backend binds anyway. Then `CreateSession` and `BindShortcuts`,
+xdg-desktop-portal 1.19+ wants an app ID for unsandboxed apps, and checks
+that `org.vivus.Vivus.desktop` is installed (the sidebar's CMake install puts
+it in `share/applications`). Without it the call fails, and Biome's backend
+binds anyway. Then `CreateSession` and `BindShortcuts`,
 each answered by a `Request` `Response` that we subscribe to before calling.
 The bound triggers are logged; anything refused or already taken gets a
 warning. If the portal restarts or closes the session, the daemon rebinds, and

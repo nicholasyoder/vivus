@@ -1,4 +1,4 @@
-//! Needs models from scripts/fetch-models.sh; skips (passes) without them.
+//! Needs models from `vivusctl models fetch`; skips (passes) without them.
 
 use vivus_speech::{Error, Synthesizer, default_models_dir};
 

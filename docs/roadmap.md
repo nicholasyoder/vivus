@@ -48,7 +48,7 @@ everyday use work comes first, then smarter answers, then polish.
 
 ### 1d: Everyday setup
 
-- [ ] systemd user unit for the daemon; `.desktop` entry `org.vivus.Vivus` (the portal app ID) for the sidebar; model download via `vivusctl` instead of `scripts/fetch-models.sh`
+- [x] Install and autostart (no systemd unit); `.desktop` entry `org.vivus.Vivus` (portal and sidebar app ID); `vivusctl models list|fetch` replaces `scripts/fetch-models.sh` (2026-11-24, `HASH`) — [README](../README.md#install)
 - [ ] `org.vivus.Settings` D-Bus interface (`Get`/`Set`/`Changed`); daemon writes config with `toml_edit`, watches the file and reloads live — [settings.md](settings.md#d-bus)
 - [ ] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon — [settings.md](settings.md#audio-devices)
 - [ ] Sidebar settings page: input/output device pickers, mic level meter with a clip indicator, end-of-turn silence, speech volume, duck volume — [settings.md](settings.md)
@@ -119,6 +119,7 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 ## Decided
 
+- No systemd user unit: the daemon and sidebar start from the session's autostart, which fits any desktop (2026-11-24).
 - Phase 1 is split into need-ordered sub-phases instead of categories; speech quality comes next, smarter answers (memory, context, web, long escalations) after basic desktop control and setup (2026-11-24).
 - The router's spoken reply is its streamed text content, not a `speak` tool: providers send tool arguments in one final chunk (2026-11-23).
 - OpenAI-compatible client is our own `reqwest` + SSE code, not `async-openai`, for quirk tolerance and raw tool-argument deltas (2026-11-23).

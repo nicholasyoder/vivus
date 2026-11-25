@@ -35,8 +35,8 @@ Also in the catalog: `nemotron-streaming-0.6b` (int8, 160 ms chunks, ~650 MB),
 native streaming. It was the standard tier until it proved worse in real use:
 no punctuation, and words at the edges still went missing after the padding
 fix below. Model names map to sherpa-onnx release archives in
-`crates/speech/src/models.rs`; `scripts/fetch-models.sh light|standard|all`
-downloads them (Nemotron only with `all`).
+`crates/speech/src/models.rs`; `vivusctl models fetch light|standard|all`
+(or model names) downloads them (Nemotron only with `all` or by name).
 
 ### Benchmarks
 

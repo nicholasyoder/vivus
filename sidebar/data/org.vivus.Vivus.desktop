@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Vivus
+GenericName=Voice Assistant
+Comment=Talk to your desktop
+Exec=vivus-sidebar --show
+Icon=audio-input-microphone
+Categories=Utility;Accessibility;
+Keywords=assistant;voice;speech;
+StartupNotify=false

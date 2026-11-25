@@ -1,3 +1,7 @@
+mod models;
+
+use std::path::PathBuf;
+
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use vivus_dbus::AssistantProxy;
@@ -30,6 +34,22 @@ enum Cmd {
     ToggleSidebar,
     /// Print the assistant state.
     Status,
+    /// List or download local speech models (doesn't need the daemon).
+    Models {
+        #[command(subcommand)]
+        action: ModelsCmd,
+        /// Models directory; set it if the config's `models_dir` isn't the default.
+        #[arg(long, global = true)]
+        dir: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ModelsCmd {
+    /// Show known models and which are installed.
+    List,
+    /// Download models: tiers (light, standard, all) or model names. Default: light.
+    Fetch { which: Vec<String> },
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -41,6 +61,22 @@ enum PttAction {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    if let Cmd::Models { action, dir } = &cli.command {
+        let dir = match dir {
+            Some(d) => d.clone(),
+            None => models::default_dir()?,
+        };
+        return match action {
+            ModelsCmd::List => {
+                models::list(&dir);
+                Ok(())
+            }
+            ModelsCmd::Fetch { which } if which.is_empty() => {
+                models::fetch(&dir, &["light".into()]).await
+            }
+            ModelsCmd::Fetch { which } => models::fetch(&dir, which).await,
+        };
+    }
     let conn = zbus::Connection::session().await?;
     let proxy = AssistantProxy::new(&conn).await?;
 
@@ -57,6 +93,7 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Quit => proxy.quit().await,
         Cmd::ToggleSidebar => proxy.toggle_sidebar().await,
         Cmd::Status => proxy.state().await.map(|s| println!("{s}")),
+        Cmd::Models { .. } => unreachable!(),
     };
     result.context("talking to vivus-daemon (is it running?)")
 }

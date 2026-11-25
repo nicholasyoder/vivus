@@ -1,5 +1,5 @@
 //! Catalog of supported models. Directory names match the sherpa-onnx release
-//! archives that `scripts/fetch-models.sh` downloads.
+//! archives that `vivusctl models fetch` downloads (`crates/ctl/src/models.rs`).
 
 use std::path::{Path, PathBuf};
 

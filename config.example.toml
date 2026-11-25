@@ -16,7 +16,7 @@ kind = "openai-compatible"
 base_url = "https://nano-gpt.com/api/v1"
 api_key_env = "NANOGPT_API_KEY"
 
-# Local speech models (scripts/fetch-models.sh downloads them).
+# Local speech models (`vivusctl models fetch` downloads them).
 [providers.local-speech]
 kind = "local-speech"
 # models_dir = "~/.local/share/vivus/models"

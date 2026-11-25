@@ -26,8 +26,37 @@ library (set `SHERPA_ONNX_LIB_DIR` to use your own).
 ```sh
 cargo build
 cmake -S sidebar -B sidebar/build && cmake --build sidebar/build
-scripts/fetch-models.sh light    # or: standard, all
+cargo run -p vivusctl -- models fetch    # light tier; or: standard, all, model names
+cargo run -p vivusctl -- models list
 ```
+
+`vivusctl models` downloads into `~/.local/share/vivus/models` (or
+`$VIVUS_MODELS`); pass `--dir` if the config sets another `models_dir`.
+
+## Install
+
+```sh
+cargo install --path crates/daemon
+cargo install --path crates/ctl
+cmake -S sidebar -B sidebar/build -DCMAKE_INSTALL_PREFIX=~/.local
+cmake --build sidebar/build && cmake --install sidebar/build
+```
+
+This puts `vivus-daemon` and `vivusctl` in `~/.cargo/bin`, and `vivus-sidebar`
+plus the `org.vivus.Vivus.desktop` entry under `~/.local`. The entry is the
+app ID the daemon registers with the shortcuts portal and the sidebar's
+Wayland app ID; launching it shows the sidebar.
+
+To start vivus with the session, add both to your desktop's autostart (either
+order; the sidebar connects once the daemon is up):
+
+```sh
+vivus-daemon
+vivus-sidebar
+```
+
+There's no systemd unit. The daemon logs to stderr (`RUST_LOG=debug` for
+more), so redirect it if your autostart drops output.
 
 ## Try it
 
