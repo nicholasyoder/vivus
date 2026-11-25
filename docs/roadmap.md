@@ -116,13 +116,13 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 - Wake word as well as push-to-talk? Probably later and optional.
 - Should the router have a small local fallback for offline use? (Speech is already local.)
-- Secret Service with a `.env` fallback (the plan in [settings.md](settings.md#api-keys)), or only the `.env` file, written by the daemon?
 - How much conversation and sidebar history to keep, and where (documents are in memory only today).
 - Which actions need spoken or visual confirmation, and how to keep screen or web text from triggering actions (treat it as data; confirm what it suggests).
 
 ## Decided
 
 - API keys never go in `config.toml`, and they're managed from the settings window rather than by hand-editing `.env` (2026-11-25).
+- API keys are stored in the Secret Service (keyring), falling back to a daemon-written `~/.config/vivus/.env` (0600) when no keyring is running (2026-11-25).
 
 - Settings get their own normal window, not a page in the layer-shell sidebar (2026-11-24).
 - No systemd user unit: the daemon and sidebar start from the session's autostart, which fits any desktop (2026-11-24).

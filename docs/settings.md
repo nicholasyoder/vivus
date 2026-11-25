@@ -226,7 +226,7 @@ are kept.
 
 ## API keys
 
-Planned. Keys stay out of `config.toml`, which people share and keep in
+Planned (store decided 2026-11-25). Keys stay out of `config.toml`, which people share and keep in
 dotfiles. The settings window sets them; nothing has to be edited by hand.
 
 - **Store.** The Secret Service (GNOME Keyring, KWallet, KeePassXC) through
