@@ -99,7 +99,7 @@ pub async fn models(
             let ids = match cached {
                 Some(ids) => ids,
                 None => {
-                    let client = vivus_inference::Client::from_provider(p)?;
+                    let client = vivus_inference::Client::from_provider(name, p)?;
                     let ids = client
                         .models()
                         .await
@@ -118,6 +118,12 @@ pub async fn models(
                 .collect())
         }
     }
+}
+
+/// Drops `provider`'s cached model list (its key changed, so it may differ or now work).
+pub fn forget_models(cache: &ModelCache, provider: &str) {
+    let prefix = format!("{provider} ");
+    cache.lock().unwrap().retain(|k, _| !k.starts_with(&prefix));
 }
 
 /// `/models` also lists speech and embedding models, which no chat role can use.

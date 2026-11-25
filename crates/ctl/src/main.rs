@@ -81,6 +81,15 @@ enum SettingsCmd {
     },
     /// TTS voices for `roles.tts.voice`: the configured model unless one is given.
     Voices { model: Option<String> },
+    /// Where a provider's API key comes from; `--set` reads a new key from
+    /// stdin (kept out of shell history), `--remove` deletes the stored one.
+    Key {
+        provider: String,
+        #[arg(long, conflicts_with = "remove")]
+        set: bool,
+        #[arg(long)]
+        remove: bool,
+    },
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -200,6 +209,35 @@ async fn settings(conn: &zbus::Connection, action: SettingsCmd) -> anyhow::Resul
                 None => role_value(&proxy, "tts", "model").await?,
             };
             print_choices(proxy.list_voices(&provider, &model).await.context(DAEMON)?);
+        }
+        SettingsCmd::Key {
+            provider,
+            set,
+            remove,
+        } => {
+            if set || remove {
+                let mut key = String::new();
+                if set {
+                    let tty = std::io::IsTerminal::is_terminal(&std::io::stdin());
+                    let stty = |arg| std::process::Command::new("stty").arg(arg).status();
+                    if tty {
+                        eprint!("API key for {provider}: ");
+                        let _ = stty("-echo");
+                    }
+                    let read = std::io::stdin().read_line(&mut key);
+                    if tty {
+                        let _ = stty("echo");
+                        eprintln!();
+                    }
+                    read?;
+                    anyhow::ensure!(!key.trim().is_empty(), "no key given");
+                }
+                proxy
+                    .set_api_key(&provider, key.trim())
+                    .await
+                    .context(DAEMON)?;
+            }
+            println!("{}", proxy.api_key_status(&provider).await.context(DAEMON)?);
         }
         SettingsCmd::Meter => {
             use futures_util::StreamExt;

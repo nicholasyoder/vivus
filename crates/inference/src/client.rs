@@ -11,8 +11,8 @@ use crate::sse::SseParser;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("API key ${0} is not set (environment or ~/.config/vivus/.env)")]
-    MissingKey(String),
+    #[error("no API key for `{0}` (set it in Settings, or ${1})")]
+    MissingKey(String, String),
     #[error("provider is not an openai-compatible provider")]
     WrongKind,
     #[error("HTTP: {0}")]
@@ -45,9 +45,10 @@ impl Client {
         }
     }
 
-    /// Builds a client for an `openai-compatible` provider; the key comes from
-    /// the environment or `~/.config/vivus/.env`.
-    pub fn from_provider(provider: &Provider) -> Result<Self, Error> {
+    /// Builds a client for the `openai-compatible` provider `name`; the key
+    /// comes from `vivus_core::keys`. A provider without `api_key_env` may run
+    /// keyless (a local server), so only one that names a variable requires it.
+    pub fn from_provider(name: &str, provider: &Provider) -> Result<Self, Error> {
         let Provider::OpenaiCompatible {
             base_url,
             api_key_env,
@@ -55,12 +56,10 @@ impl Client {
         else {
             return Err(Error::WrongKind);
         };
-        let api_key = match api_key_env {
-            Some(var) => Some(
-                vivus_core::config::secret(var).ok_or_else(|| Error::MissingKey(var.clone()))?,
-            ),
-            None => None,
-        };
+        let (api_key, _) = vivus_core::keys::api_key(name, provider);
+        if let (None, Some(var)) = (&api_key, api_key_env) {
+            return Err(Error::MissingKey(name.into(), var.clone()));
+        }
         Ok(Self::new(base_url, api_key))
     }
 

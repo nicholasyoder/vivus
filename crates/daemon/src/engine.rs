@@ -19,6 +19,7 @@ use zbus::Connection;
 
 use crate::choices::{self, ModelCache};
 use crate::clipboard::SharedClipboard;
+use crate::keyring;
 use crate::router::{ReplyEvent, Router};
 use crate::service;
 use crate::settings;
@@ -108,6 +109,19 @@ pub enum Command {
         role: String,
         provider: String,
         reply: oneshot::Sender<Result<Vec<vivus_dbus::Choice>, String>>,
+    },
+    /// `org.vivus.Settings.SetApiKey`; stored from a task, since the keyring may prompt.
+    SetApiKey {
+        provider: String,
+        key: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// A provider's key was stored or removed: rebuild what used the old one.
+    ApiKeyChanged(String),
+    /// `org.vivus.Settings.ApiKeyStatus`.
+    ApiKeyStatus {
+        provider: String,
+        reply: oneshot::Sender<Result<String, String>>,
     },
     /// `org.vivus.Settings.ListVoices`.
     ListVoices {
@@ -285,6 +299,42 @@ impl Engine {
                     let r = choices::models(&config, &role, &provider, &cache).await;
                     let _ = reply.send(r.map_err(|e| format!("{e:#}")));
                 });
+            }
+            Command::SetApiKey {
+                provider,
+                key,
+                reply,
+            } => {
+                let found = self.config.providers.get(&provider).cloned();
+                let tx = self.tx.clone();
+                tokio::spawn(async move {
+                    let r = async {
+                        let p = found.with_context(|| format!("no provider `{provider}`"))?;
+                        let key = key.trim();
+                        keyring::check_key(key)?;
+                        let to = keyring::store(&provider, &p, Some(key).filter(|k| !k.is_empty()))
+                            .await?;
+                        tracing::info!("API key for {provider}: {}", to.as_str());
+                        let _ = tx.send(Command::ApiKeyChanged(provider));
+                        anyhow::Ok(())
+                    }
+                    .await;
+                    let _ = reply.send(r.map_err(|e| format!("{e:#}")));
+                });
+            }
+            Command::ApiKeyChanged(provider) => {
+                self.router = None;
+                choices::forget_models(&self.model_cache, &provider);
+            }
+            Command::ApiKeyStatus { provider, reply } => {
+                let r = match self.config.providers.get(&provider) {
+                    Some(p) => Ok(vivus_core::keys::api_key(&provider, p)
+                        .1
+                        .as_str()
+                        .to_owned()),
+                    None => Err(format!("no provider `{provider}`")),
+                };
+                let _ = reply.send(r);
             }
             Command::SpeakingFinished => {
                 // A reply still in progress means this is from an older, cancelled one.

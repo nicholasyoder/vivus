@@ -68,6 +68,8 @@ pub trait Settings {
     fn list_providers(&self, role: &str) -> zbus::Result<Vec<String>>;
     fn list_models(&self, role: &str, provider: &str) -> zbus::Result<Vec<Choice>>;
     fn list_voices(&self, provider: &str, model: &str) -> zbus::Result<Vec<Choice>>;
+    fn set_api_key(&self, provider: &str, key: &str) -> zbus::Result<()>;
+    fn api_key_status(&self, provider: &str) -> zbus::Result<String>;
 
     fn meter_input(&self) -> zbus::Result<()>;
     #[zbus(signal)]

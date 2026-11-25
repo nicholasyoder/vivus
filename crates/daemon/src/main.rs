@@ -2,6 +2,7 @@ mod apps;
 mod choices;
 mod clipboard;
 mod engine;
+mod keyring;
 mod pronounce;
 mod router;
 mod service;
@@ -39,6 +40,9 @@ async fn main() -> anyhow::Result<()> {
         Some(p) => Config::parse(&text, p)?,
         None => Config::default(),
     };
+
+    // Before anything builds an inference client.
+    keyring::load().await;
 
     let shared = Arc::new(Mutex::new(Shared {
         config_json: config.to_json(),

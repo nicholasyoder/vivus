@@ -11,7 +11,11 @@ class DaemonClient;
 class SettingsClient;
 class QComboBox;
 class QDoubleSpinBox;
+class QFormLayout;
+class QGroupBox;
 class QLabel;
+class QLineEdit;
+class QPushButton;
 class QProgressBar;
 class QSlider;
 class QTimer;
@@ -58,6 +62,21 @@ private:
     QString roleValue(const RoleRow &row, const char *key) const;
     RoleRow *findRole(const QString &role);
 
+    // One openai-compatible provider's key: write-only, so a masked field to
+    // paste a new one, with where the current one lives as its placeholder.
+    struct KeyRow {
+        QString provider;
+        QLineEdit *edit = nullptr;
+        QPushButton *save = nullptr;
+        QPushButton *remove = nullptr;
+    };
+
+    void updateKeys();
+    void updateKeyStatus(const QString &provider);
+    void saveKey(const QString &provider, const QString &key);
+    KeyRow *findKey(const QString &provider);
+    void alignLabels();
+
     void updateConnected();
     void updateConfig();
     void updateDevices();
@@ -88,4 +107,8 @@ private:
     QLabel *m_duckLabel;
     QLabel *m_status;
     std::vector<RoleRow> m_roles;
+    QGroupBox *m_keysGroup;
+    QFormLayout *m_keysForm;
+    std::vector<KeyRow> m_keys;
+    std::vector<QFormLayout *> m_forms;
 };

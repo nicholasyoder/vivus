@@ -2,8 +2,10 @@
 # Each role names a provider (and usually a model). Switch providers by editing
 # this file only.
 #
-# API keys (api_key_env) are read from the environment, then from
-# ~/.config/vivus/.env as KEY=value lines. chmod 600 that file.
+# API keys never go in this file: set them in the Settings window (or
+# `vivusctl settings key <provider> --set`), which saves them in the system
+# keyring, or ~/.config/vivus/.env without one. An environment variable named
+# by api_key_env (default <NAME>_API_KEY) wins over a saved key.
 
 [providers.groq]
 kind = "openai-compatible"

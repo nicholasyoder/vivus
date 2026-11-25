@@ -123,7 +123,7 @@ impl Backend {
                 model: role.model.clone(),
             },
             _ => Backend::Chat {
-                client: Client::from_provider(provider)?,
+                client: Client::from_provider(&role.provider, provider)?,
                 model: role.model.clone().context("no model")?,
             },
         };
@@ -183,7 +183,7 @@ impl Router {
             .context("no [roles.router] in the config")?;
         let model = role.model.clone().context("[roles.router] has no model")?;
         let provider = &config.providers[&role.provider];
-        let client = Client::from_provider(provider)
+        let client = Client::from_provider(&role.provider, provider)
             .with_context(|| format!("router provider `{}`", role.provider))?;
         let mut router = Self::new(client, model);
         // A broken escalation role shouldn't take the router down with it.

@@ -119,6 +119,21 @@
       <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="ChoiceList"/>
     </method>
 
+    <!-- Stores a provider's API key in the keyring (Secret Service), or in
+         ~/.config/vivus/.env (0600) without one; an empty key removes it.
+         Keys are never sent back out. The router and the provider's model list
+         are rebuilt with the new key. -->
+    <method name="SetApiKey">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="key" type="s" direction="in"/>
+    </method>
+    <!-- Where a provider's key comes from: environment (its variable is set,
+         which wins over a stored key), keyring, file (.env) or missing. -->
+    <method name="ApiKeyStatus">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="status" type="s" direction="out"/>
+    </method>
+
     <!-- Sends InputLevel for the next 5 s, keeping the mic open meanwhile;
          call again to extend (a settings page calls it every couple of seconds). -->
     <method name="MeterInput"/>

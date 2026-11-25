@@ -43,6 +43,12 @@ public:
     // An empty provider (or model) is the role's default.
     void listModels(const QString &role, const QString &provider, ChoicesReply done);
     void listVoices(const QString &provider, const QString &model, ChoicesReply done);
+    // API keys are write-only: status is environment, keyring, file or missing.
+    using StatusReply = std::function<void(const QString &status, const QString &error)>;
+    using DoneReply = std::function<void(const QString &error)>;
+    void apiKeyStatus(const QString &provider, StatusReply done);
+    // An empty key removes it.
+    void setApiKey(const QString &provider, const QString &key, DoneReply done);
 
 signals:
     void configChanged();

@@ -29,8 +29,8 @@ most models). Defaults and tests should work with either.
 A small `reqwest` + SSE client of our own rather than `async-openai`: generated
 SDK types reject the quirks below, and we need raw tool-argument deltas.
 
-- `Client::from_provider` reads the key named by `api_key_env` from the
-  environment, else `~/.config/vivus/.env` (read per lookup, so edits apply live); `chat()` returns a
+- `Client::from_provider(name, provider)` gets its key from `vivus_core::keys`
+  (environment, keyring, `.env`; see [settings.md](settings.md#api-keys)); `chat()` returns a
   `ChatStream` of `Event`s (`Text`, `Reasoning`, `ToolCallStart`,
   `ToolCallArgs`, then `Done(Reply)` with the assembled turn and usage).
   `complete()` drains it.
@@ -50,7 +50,7 @@ SDK types reject the quirks below, and we need raw tool-argument deltas.
   reasoning about ARPAbet ([speech.md](speech.md#out-of-lexicon-words)).
 
 Try a configured role: `cargo run -p vivus-inference --example chat -- [--role answer] <prompt>`
-(keys in the environment or `~/.config/vivus/.env`). Content is printed as
+(keys in the environment or `~/.config/vivus/.env`; only the daemon reads the keyring). Content is printed as
 speech, with a `show` tool offered; it prints time to first event, to first
 spoken text, and the number of tool-argument chunks.
 

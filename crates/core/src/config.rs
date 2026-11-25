@@ -112,8 +112,8 @@ impl Default for Audio {
 pub enum Provider {
     OpenaiCompatible {
         base_url: String,
-        /// Name of the variable holding the key, so keys stay out of this file.
-        /// Looked up in the environment, then in `.env` next to the config.
+        /// The variable the key goes by in the environment and `.env`; defaults
+        /// to `<NAME>_API_KEY`. Keys never go in this file (see `keys`).
         api_key_env: Option<String>,
     },
     ClaudeCode {
@@ -262,37 +262,6 @@ impl Config {
     }
 }
 
-/// A secret such as an API key: the environment wins, then `~/.config/vivus/.env`.
-/// The file is read on each call so edits apply without a restart.
-pub fn secret(var: &str) -> Option<String> {
-    let from_env = std::env::var(var).ok().filter(|v| !v.is_empty());
-    from_env.or_else(|| {
-        let text = std::fs::read_to_string(Config::env_file_path()?).ok()?;
-        parse_env(&text).remove(var).filter(|v| !v.is_empty())
-    })
-}
-
-/// `KEY=value` lines; `#` comments, optional `export ` and surrounding quotes.
-fn parse_env(text: &str) -> BTreeMap<String, String> {
-    text.lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            let line = line.strip_prefix("export ").unwrap_or(line);
-            let (k, v) = line.split_once('=')?;
-            let k = k.trim();
-            if k.is_empty() || k.starts_with('#') {
-                return None;
-            }
-            let v = v.trim();
-            let v = [('"', '"'), ('\'', '\'')]
-                .iter()
-                .find_map(|&(a, b)| v.strip_prefix(a)?.strip_suffix(b))
-                .unwrap_or(v);
-            Some((k.to_owned(), v.to_owned()))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,15 +272,6 @@ mod tests {
         let config: Config = toml::from_str(text).unwrap();
         config.validate().unwrap();
         assert!(config.roles.router.is_some());
-    }
-
-    #[test]
-    fn env_file_parsing() {
-        let env = parse_env("# keys\nexport A=1\nB = \"two words\"\nC='x=y'\n\nnot a line\n=bad\n");
-        assert_eq!(env.len(), 3);
-        assert_eq!(env["A"], "1");
-        assert_eq!(env["B"], "two words");
-        assert_eq!(env["C"], "x=y");
     }
 
     #[test]

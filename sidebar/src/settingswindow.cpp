@@ -10,6 +10,7 @@
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QJsonObject>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QProgressBar>
@@ -152,22 +153,22 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
                        addRole(QStringLiteral("agent"), tr("Multi-step work; uses the longer-answers model when unset")));
     modelsForm->addRow(tr("Vision"), addRole(QStringLiteral("vision"), tr("Not used yet: screen awareness comes later")));
 
-    // One label column across all groups.
-    int labelWidth = 0;
-    for (auto *f : {micForm, speechForm, modelsForm})
-        for (int row = 0; row < f->rowCount(); ++row)
-            if (auto *item = f->itemAt(row, QFormLayout::LabelRole))
-                labelWidth = std::max(labelWidth, item->widget()->sizeHint().width());
-    for (auto *f : {micForm, speechForm, modelsForm})
-        for (int row = 0; row < f->rowCount(); ++row)
-            if (auto *item = f->itemAt(row, QFormLayout::LabelRole))
-                item->widget()->setMinimumWidth(labelWidth);
+    m_keysGroup = new QGroupBox(tr("API keys"), m_form);
+    m_keysGroup->setObjectName(QStringLiteral("ApiKeys"));
+    m_keysGroup->setToolTip(tr("Kept in the system keyring (or ~/.config/vivus/.env without one), "
+                               "never in the config file"));
+    m_keysForm = new QFormLayout(m_keysGroup);
+    m_keysGroup->hide(); // until there's a provider that takes a key
+
+    m_forms = {micForm, speechForm, modelsForm, m_keysForm};
+    alignLabels();
 
     auto *formLayout = new QVBoxLayout(m_form);
     formLayout->setContentsMargins(0, 0, 0, 0);
     formLayout->addWidget(mic);
     formLayout->addWidget(speech);
     formLayout->addWidget(models);
+    formLayout->addWidget(m_keysGroup);
 
     m_status = new QLabel(this);
     m_status->setObjectName(QStringLiteral("SettingsStatus"));
@@ -242,6 +243,22 @@ SettingsWindow::SettingsWindow(DaemonClient *daemon, SettingsClient *settings, Q
     updateConnected();
 }
 
+// One label column across all groups.
+void SettingsWindow::alignLabels()
+{
+    int labelWidth = 0;
+    for (auto *f : m_forms)
+        for (int row = 0; row < f->rowCount(); ++row)
+            if (auto *item = f->itemAt(row, QFormLayout::LabelRole)) {
+                item->widget()->setMinimumWidth(0);
+                labelWidth = std::max(labelWidth, item->widget()->sizeHint().width());
+            }
+    for (auto *f : m_forms)
+        for (int row = 0; row < f->rowCount(); ++row)
+            if (auto *item = f->itemAt(row, QFormLayout::LabelRole))
+                item->widget()->setMinimumWidth(labelWidth);
+}
+
 QTimer *SettingsWindow::debounce(std::function<void()> commit)
 {
     auto *t = new QTimer(this);
@@ -308,6 +325,7 @@ void SettingsWindow::updateConfig()
     }
     updateDevices();
     updateRoles();
+    updateKeys();
 }
 
 void SettingsWindow::updateDevices()
@@ -617,4 +635,133 @@ void SettingsWindow::onVoiceActivated(RoleRow &row)
         m_settings->reset(QStringLiteral("roles.tts.voice"));
     else
         m_settings->set(QStringLiteral("roles.tts.voice"), voice.toString());
+}
+
+// Rebuilt only when the set of providers changes, so a half-typed key survives other edits.
+void SettingsWindow::updateKeys()
+{
+    QStringList providers;
+    const QJsonObject all = m_settings->value(QStringLiteral("providers")).toObject();
+    for (auto it = all.begin(); it != all.end(); ++it)
+        if (it.value().toObject().value(QLatin1String("kind")).toString() == QLatin1String("openai-compatible"))
+            providers << it.key();
+
+    QStringList shown;
+    for (const auto &k : m_keys)
+        shown << k.provider;
+    if (providers != shown) {
+        while (m_keysForm->rowCount() > 0)
+            m_keysForm->removeRow(0);
+        m_keys.clear();
+        for (const auto &provider : providers) {
+            KeyRow row;
+            row.provider = provider;
+            row.edit = new QLineEdit(m_keysGroup);
+            row.edit->setObjectName(QStringLiteral("ApiKey"));
+            row.edit->setEchoMode(QLineEdit::Password);
+            row.edit->setClearButtonEnabled(true);
+            row.save = new QPushButton(tr("Save"), m_keysGroup);
+            row.save->setObjectName(QStringLiteral("SaveApiKeyButton"));
+            row.save->setEnabled(false);
+            row.remove = new QPushButton(tr("Remove"), m_keysGroup);
+            row.remove->setObjectName(QStringLiteral("RemoveApiKeyButton"));
+            row.remove->setEnabled(false);
+
+            const auto save = [this, provider] {
+                const QString key = findKey(provider)->edit->text().trimmed();
+                if (!key.isEmpty())
+                    saveKey(provider, key);
+            };
+            connect(row.edit, &QLineEdit::returnPressed, this, save);
+            connect(row.save, &QPushButton::clicked, this, save);
+            connect(row.edit, &QLineEdit::textChanged, row.save,
+                    [save = row.save](const QString &t) { save->setEnabled(!t.trimmed().isEmpty()); });
+            connect(row.remove, &QPushButton::clicked, this, [this, provider] { saveKey(provider, QString()); });
+
+            auto *box = new QWidget(m_keysGroup);
+            auto *layout = new QHBoxLayout(box);
+            layout->setContentsMargins(0, 0, 0, 0);
+            layout->addWidget(row.edit, 1);
+            layout->addWidget(row.save);
+            layout->addWidget(row.remove);
+            m_keysForm->addRow(provider, box);
+            m_keys.push_back(row);
+        }
+        m_keysGroup->setVisible(!m_keys.empty());
+        alignLabels();
+    }
+    for (const auto &provider : providers)
+        updateKeyStatus(provider);
+}
+
+SettingsWindow::KeyRow *SettingsWindow::findKey(const QString &provider)
+{
+    for (auto &row : m_keys)
+        if (row.provider == provider)
+            return &row;
+    return nullptr;
+}
+
+// The variable a key goes by, as the daemon derives it (vivus_core::keys::key_var).
+static QString keyVariable(const QString &provider, const QJsonValue &configured)
+{
+    if (configured.isString())
+        return configured.toString();
+    QString var;
+    for (const QChar c : provider)
+        var += (c.isLetterOrNumber() && c.unicode() < 128) ? c.toUpper() : QLatin1Char('_');
+    return var + QStringLiteral("_API_KEY");
+}
+
+void SettingsWindow::updateKeyStatus(const QString &provider)
+{
+    m_settings->apiKeyStatus(provider, [this, provider](const QString &status, const QString &error) {
+        auto *row = findKey(provider);
+        if (!row)
+            return;
+        const QString var =
+            keyVariable(provider, m_settings->value(QStringLiteral("providers.%1.api_key_env").arg(provider)));
+        QString text;
+        if (!error.isEmpty())
+            text = error;
+        else if (status == QLatin1String("keyring"))
+            text = tr("Saved in the keyring; paste a key to replace it");
+        else if (status == QLatin1String("file"))
+            text = tr("Saved in ~/.config/vivus/.env; paste a key to replace it");
+        else if (status == QLatin1String("environment"))
+            text = tr("Set by $%1 in the environment, which wins over a saved key").arg(var);
+        else
+            text = tr("No key: paste one here");
+        row->edit->setPlaceholderText(text);
+        row->edit->setToolTip(tr("Also read from $%1 in the environment").arg(var));
+        row->remove->setEnabled(status == QLatin1String("keyring") || status == QLatin1String("file"));
+    });
+}
+
+// Then re-lists models for the roles on this provider, which also tests the key.
+void SettingsWindow::saveKey(const QString &provider, const QString &key)
+{
+    auto *row = findKey(provider);
+    row->edit->setEnabled(false);
+    row->save->setEnabled(false);
+    row->remove->setEnabled(false);
+    m_settings->setApiKey(provider, key, [this, provider](const QString &error) {
+        auto *row = findKey(provider);
+        if (!row)
+            return;
+        row->edit->setEnabled(true);
+        if (error.isEmpty()) {
+            row->edit->clear();
+            m_status->hide();
+        } else {
+            showError(tr("the %1 API key").arg(provider), error);
+            row->save->setEnabled(!row->edit->text().trimmed().isEmpty());
+        }
+        updateKeyStatus(provider);
+        for (auto &role : m_roles)
+            if (roleValue(role, "provider") == provider) {
+                role.modelsFor.clear();
+                syncModels(role);
+            }
+    });
 }

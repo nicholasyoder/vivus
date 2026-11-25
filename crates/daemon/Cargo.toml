@@ -23,6 +23,7 @@ vivus-wayland.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 notify = "8.2.1"
+oo7 = { version = "0.5", default-features = false, features = ["tokio", "native_crypto"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["io-util", "net"] }

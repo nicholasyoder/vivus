@@ -111,6 +111,20 @@ void SettingsClient::listVoices(const QString &provider, const QString &model, C
     onReply<ChoiceList>(this, m_iface->ListVoices(provider, model), std::move(done));
 }
 
+void SettingsClient::apiKeyStatus(const QString &provider, StatusReply done)
+{
+    onReply<QString>(this, m_iface->ApiKeyStatus(provider), std::move(done));
+}
+
+void SettingsClient::setApiKey(const QString &provider, const QString &key, DoneReply done)
+{
+    auto *w = new QDBusPendingCallWatcher(m_iface->SetApiKey(provider, key), this);
+    connect(w, &QDBusPendingCallWatcher::finished, this, [done = std::move(done)](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+        done(w->isError() ? w->error().message() : QString());
+    });
+}
+
 void SettingsClient::meterInput()
 {
     m_iface->MeterInput();

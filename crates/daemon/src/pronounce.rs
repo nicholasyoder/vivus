@@ -74,7 +74,7 @@ impl Pronouncer {
             let role = config.roles.router.as_ref().context("no [roles.router]")?;
             let model = role.model.clone().context("[roles.router] has no model")?;
             Ok((
-                Client::from_provider(&config.providers[&role.provider])?,
+                Client::from_provider(&role.provider, &config.providers[&role.provider])?,
                 model,
             ))
         };
@@ -428,7 +428,8 @@ mod tests {
     async fn live_lookup() {
         let config = Config::load(&Config::default_path().unwrap()).unwrap();
         let role = config.roles.router.as_ref().unwrap();
-        let client = Client::from_provider(&config.providers[&role.provider]).unwrap();
+        let client =
+            Client::from_provider(&role.provider, &config.providers[&role.provider]).unwrap();
         let words: Vec<String> = [
             "Hyprland",
             "nginx",

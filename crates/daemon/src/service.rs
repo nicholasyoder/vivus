@@ -204,6 +204,20 @@ impl Settings {
         .await
     }
 
+    async fn set_api_key(&self, provider: String, key: String) -> fdo::Result<()> {
+        self.ask(|reply| Command::SetApiKey {
+            provider,
+            key,
+            reply,
+        })
+        .await
+    }
+
+    async fn api_key_status(&self, provider: String) -> fdo::Result<String> {
+        self.ask(|reply| Command::ApiKeyStatus { provider, reply })
+            .await
+    }
+
     async fn meter_input(&self) -> fdo::Result<()> {
         self.tx
             .send(Command::MeterInput)

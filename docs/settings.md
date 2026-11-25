@@ -43,6 +43,8 @@ A new `org.vivus.Settings` interface on `/org/vivus` (contract first, as usual):
 - `ListProviders(s role) → as`, `ListModels(s role, s provider) → a(ss)`,
   `ListVoices(s provider, s model) → a(ss)`: what the role pickers offer (see
   [Roles and providers](#roles-and-providers)).
+- `SetApiKey(s provider, s key)`, `ApiKeyStatus(s provider) → s`: see
+  [API keys](#api-keys).
 
 As with `org.vivus.Assistant`, the methods only enqueue engine commands.
 `Set`/`Reset` carry a oneshot reply, so the call returns once the engine has
@@ -172,8 +174,8 @@ and registered at startup.
 
 The window's Models group has a row per role (stt, tts, router, answer,
 agent, vision): a provider picker, then a model picker, plus the TTS voice.
-Adding or editing providers (base URL, API key) comes later and depends on
-how API keys are stored (see the roadmap's open questions).
+Keys are set in their own group (see [API keys](#api-keys)); adding and
+editing providers comes later (see [Providers](#providers)).
 
 - **Providers.** `ListProviders(role)` returns the configured providers whose
   kind can serve the role (`Provider::serves`): `local-speech` for stt/tts,
@@ -226,23 +228,47 @@ are kept.
 
 ## API keys
 
-Planned (store decided 2026-11-25). Keys stay out of `config.toml`, which people share and keep in
-dotfiles. The settings window sets them; nothing has to be edited by hand.
+Keys stay out of `config.toml`, which people share and keep in dotfiles. The
+settings window sets them; nothing has to be edited by hand.
 
 - **Store.** The Secret Service (GNOME Keyring, KWallet, KeePassXC) through
-  the pure-Rust `oo7` crate, one item per provider with attributes
-  `application = vivus`, `provider = <name>`. Without a keyring (common on
-  sway or Hyprland), the daemon writes `~/.config/vivus/.env` itself, mode 0600.
-- **Lookup order** for a provider's key: its `api_key_env` variable in the
-  environment, then the keyring, then `.env`. An environment variable still
-  wins, so scripted setups keep working.
-- **D-Bus.** `SetApiKey(s provider, s key)` (an empty key removes it) and
-  `ApiKeyStatus(s provider) → s`: `keyring`, `file`, `environment` or
-  `missing`. A key is never sent back out, so the window shows a masked
-  field with Replace and Remove buttons, not the key.
+  `oo7` (0.5: newer ones need zbus 6), one item per provider labelled
+  "Vivus API key: <name>" with attributes `application = vivus`,
+  `provider = <name>` (`secret-tool search application vivus` shows them).
+  Without a Secret Service (common on sway or Hyprland), the daemon writes
+  `~/.config/vivus/.env` itself, mode 0600, through a temp file and rename,
+  keeping the file's other lines.
+- **Variable.** A provider's key goes by `api_key_env` in the environment and
+  `.env`, else a name derived from the provider's (`nano-gpt` →
+  `NANO_GPT_API_KEY`), so a fresh provider needs no extra config.
+- **Lookup order** (`vivus_core::keys::api_key`): the environment, then the
+  keyring, then `.env`. An environment variable wins, so scripted setups keep
+  working; the window says so instead of offering Remove. A provider with
+  `api_key_env` set fails to build a client without a key; one without may
+  run keyless (a local server).
+- **Keyring cache.** Client construction is synchronous, so the daemon loads
+  the keyring's vivus items into a cache in `vivus-core` at startup
+  (`keyring::load`, waiting up to 3 s: a locked keyring prompts to unlock, and
+  a later answer still fills the cache) and updates it on every `SetApiKey`.
+  Edits made in Seahorse while the daemon runs apply after a restart. `.env`
+  is read on each lookup.
+- **D-Bus.** `SetApiKey(provider, key)` stores the key (an empty key removes
+  it); it's trimmed, and refused if it has spaces, quotes or control
+  characters. Storing in the keyring also drops a `.env` copy, and removing
+  clears both, so the status tells where the key really is.
+  `ApiKeyStatus(provider)` returns `environment`, `keyring`, `file` or
+  `missing`. A key is never sent back out.
 - **Applying.** Setting a key drops the router (rebuilt on the next turn) and
-  that provider's `/models` cache entry. The window then lists the models
-  again, which also tests the key.
+  that provider's `/models` cache entry. Pronunciation lookups keep the
+  client they started with until the speaker reloads.
+- **Window.** An "API keys" group lists each `openai-compatible` provider
+  with a masked field whose placeholder says where the current key lives,
+  plus Save and Remove. After a save the roles on that provider list their
+  models again, which tests the key (a failure shows in the model picker's
+  tooltip).
+- **CLI.** `vivusctl settings key <provider>` prints the status; `--set`
+  reads a key from stdin without echo (so it stays out of shell history),
+  `--remove` deletes it.
 
 ## Providers
 
