@@ -204,6 +204,12 @@ impl Settings {
         .await
     }
 
+    async fn builtin_providers(&self) -> Vec<String> {
+        vivus_core::config::builtin_providers()
+            .into_keys()
+            .collect()
+    }
+
     async fn set_api_key(&self, provider: String, key: String) -> fdo::Result<()> {
         self.ask(|reply| Command::SetApiKey {
             provider,

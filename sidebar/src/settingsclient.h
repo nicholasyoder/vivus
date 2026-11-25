@@ -27,7 +27,7 @@ public:
 
     // Re-fetches config and devices; emits configChanged and devicesChanged.
     void refresh();
-    // Failures arrive as error().
+    // Failures arrive as error(). A QVariantMap value writes a whole table.
     void set(const QString &path, const QVariant &value);
     void reset(const QString &path);
     // Asks for inputLevel signals for the next 5 s.
@@ -49,6 +49,11 @@ public:
     void apiKeyStatus(const QString &provider, StatusReply done);
     // An empty key removes it.
     void setApiKey(const QString &provider, const QString &key, DoneReply done);
+    // For when the caller reports failures itself (error() isn't emitted).
+    void set(const QString &path, const QVariant &value, DoneReply done);
+    void reset(const QString &path, DoneReply done);
+    // Providers that exist without config; they can't be removed.
+    void builtinProviders(ProvidersReply done);
 
 signals:
     void configChanged();

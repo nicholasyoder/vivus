@@ -712,10 +712,29 @@ impl Engine {
             .context("no config path (HOME is unset)")?;
         // Edit what's on disk now, in case a hand edit hasn't been reloaded yet.
         let current = Config::read(&file)?;
+        let removing = match path.split_once('.') {
+            Some(("providers", name)) if value.is_none() && !name.contains('.') => self
+                .config
+                .providers
+                .get(name)
+                .map(|p| (name.to_owned(), p.clone())),
+            _ => None,
+        };
         let (text, config) = vivus_core::settings::edit(&current, &file, path, value)?;
         choices::check_edit(&config, path)?;
         settings::write(&file, &text)?;
         self.config_file.text = text;
+        // A removed provider's key goes too (an override reverting to a built-in keeps it).
+        if let Some((name, provider)) = removing
+            && !config.providers.contains_key(&name)
+            && vivus_core::keys::key_var(&name, &provider).is_some()
+        {
+            tokio::spawn(async move {
+                if let Err(e) = keyring::store(&name, &provider, None).await {
+                    tracing::warn!("removing the API key of {name}: {e:#}");
+                }
+            });
+        }
         Ok(self.apply_config(config).await?)
     }
 
@@ -763,6 +782,9 @@ impl Engine {
             .any(|p| p.starts_with("roles.") || p.starts_with("providers."))
         {
             self.router = None;
+        }
+        for name in paths.iter().filter_map(|p| p.strip_prefix("providers.")) {
+            choices::forget_models(&self.model_cache, name.split('.').next().unwrap());
         }
         let resolved =
             |c: &Config, role| choices::check_local(c, role).map_err(|e| format!("{e:#}"));

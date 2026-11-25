@@ -6,8 +6,10 @@
    #DuckVolume, #SettingsStatus, #OpenConfigButton; per role #SttProvider,
    #SttModel, #TtsProvider, #TtsModel, #RouterProvider, #RouterModel,
    #AnswerProvider, #AnswerModel, #AgentProvider, #AgentModel,
-   #VisionProvider, #VisionModel; #TtsVoice; #ApiKeys (group), and per
-   provider #ApiKey, #SaveApiKeyButton, #RemoveApiKeyButton.
+   #VisionProvider, #VisionModel; #TtsVoice; #Providers (group), per
+   provider #ProviderUrl, #RemoveProviderButton, #ApiKey, #SaveApiKeyButton,
+   #RemoveApiKeyButton; #NewProviderName, #NewProviderUrl, #NewProviderKey,
+   #AddProviderButton.
    #VivusSidebar and #StateDot carry a `state` property:
    idle | listening | thinking | speaking | disconnected. */
 

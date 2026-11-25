@@ -55,7 +55,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] Mic gain slider in Settings (the input's PipeWire volume, saved by WirePlumber; follows other apps' changes); level meter turns red when it clips (2026-11-24, `28ea698`) — [settings.md](settings.md#input-gain)
 - [x] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice; STT/TTS changes reload live (2026-11-25, `e56a4a3`) — [settings.md](settings.md#roles-and-providers)
 - [x] API keys from the settings window: stored in the Secret Service, `.env` fallback without a keyring; never sent back over D-Bus; key status per provider (2026-11-25, `7a44fe4`) — [settings.md](settings.md#api-keys)
-- [ ] Add/remove OpenAI-compatible providers in the settings window (name, base URL, key); built-in `openai`, `nano-gpt` and `groq` present without config — [settings.md](settings.md#providers)
+- [x] Add/remove OpenAI-compatible providers in the settings window (name, base URL, key); built-in `openai`, `nano-gpt`, `groq`, `local-speech` and `claude-code` present without config (2026-11-25, `HASH`) — [settings.md](settings.md#providers)
 
 ### 1e: Smarter answers
 

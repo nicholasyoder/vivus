@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::Context;
 use notify::Watcher;
 use tokio::sync::mpsc::{self, UnboundedSender};
-use vivus_core::settings::{Array, Value};
+use vivus_core::settings::{Array, InlineTable, Value};
 use zbus::zvariant;
 
 use crate::engine::Command;
@@ -90,7 +90,8 @@ pub fn needs_restart(path: &str) -> bool {
     path.starts_with("shortcuts.")
 }
 
-/// D-Bus variant → TOML value: strings, booleans, numbers and arrays of them.
+/// D-Bus variant → TOML value: strings, booleans, numbers, arrays of them, and
+/// string-keyed dictionaries (`a{sv}`, written as a table).
 pub fn to_toml(v: &zvariant::Value<'_>) -> Result<Value, String> {
     use zvariant::Value as V;
     Ok(match v {
@@ -106,6 +107,16 @@ pub fn to_toml(v: &zvariant::Value<'_>) -> Result<Value, String> {
         V::U64(n) => i64::try_from(*n).map_err(|_| "integer too large")?.into(),
         V::F64(n) => (*n).into(),
         V::Array(a) => Value::Array(a.iter().map(to_toml).collect::<Result<Array, _>>()?),
+        V::Dict(d) => {
+            let mut t = InlineTable::new();
+            for (k, v) in d.iter() {
+                let V::Str(k) = k else {
+                    return Err("dictionary keys must be strings".into());
+                };
+                t.insert(k.as_str(), to_toml(v)?);
+            }
+            Value::InlineTable(t)
+        }
         other => {
             return Err(format!(
                 "unsupported value type `{}`",
@@ -128,6 +139,11 @@ mod tests {
         assert_eq!(
             to_toml(&zvariant::Value::from(7u32)).unwrap().as_integer(),
             Some(7)
+        );
+        let dict = std::collections::HashMap::from([("kind", zvariant::Value::from("x"))]);
+        assert_eq!(
+            to_toml(&zvariant::Value::from(dict)).unwrap().to_string(),
+            r#"{ kind = "x" }"#
         );
         assert!(
             to_toml(&zvariant::Value::from(

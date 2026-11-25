@@ -45,6 +45,8 @@ A new `org.vivus.Settings` interface on `/org/vivus` (contract first, as usual):
   [Roles and providers](#roles-and-providers)).
 - `SetApiKey(s provider, s key)`, `ApiKeyStatus(s provider) → s`: see
   [API keys](#api-keys).
+- `BuiltinProviders() → as`, and `Set` with a dictionary: see
+  [Providers](#providers).
 
 As with `org.vivus.Assistant`, the methods only enqueue engine commands.
 `Set`/`Reset` carry a oneshot reply, so the call returns once the engine has
@@ -174,15 +176,14 @@ and registered at startup.
 
 The window's Models group has a row per role (stt, tts, router, answer,
 agent, vision): a provider picker, then a model picker, plus the TTS voice.
-Keys are set in their own group (see [API keys](#api-keys)); adding and
-editing providers comes later (see [Providers](#providers)).
+Keys and providers have their own group (see [Providers](#providers)).
 
 - **Providers.** `ListProviders(role)` returns the configured providers whose
   kind can serve the role (`Provider::serves`): `local-speech` for stt/tts,
   `openai-compatible` for the LLM roles, `claude-code` for answer and agent
   only (the router needs streamed tool calls). The first picker entry is the
   unset role: "Default (local)" for stt/tts, "None" for the rest (agent then
-  falls back to answer).
+  falls back to answer). A provider without a key reads "groq (no key)".
 - **Models.** `ListModels(role, provider)` gives `(id, label)`; an empty id is
   the unset model, labelled with the default it stands for. Local speech
   lists catalog models that are on disk (`installed()`), with labels from the
@@ -261,34 +262,46 @@ settings window sets them; nothing has to be edited by hand.
 - **Applying.** Setting a key drops the router (rebuilt on the next turn) and
   that provider's `/models` cache entry. Pronunciation lookups keep the
   client they started with until the speaker reloads.
-- **Window.** An "API keys" group lists each `openai-compatible` provider
-  with a masked field whose placeholder says where the current key lives,
-  plus Save and Remove. After a save the roles on that provider list their
-  models again, which tests the key (a failure shows in the model picker's
-  tooltip).
+- **Window.** Each provider row in the Providers group has a masked key
+  field whose placeholder says where the current key lives, plus Save and
+  Remove key. After a save the roles on that provider list their models
+  again, which tests the key (a failure shows in the model picker's tooltip).
 - **CLI.** `vivusctl settings key <provider>` prints the status; `--set`
   reads a key from stdin without echo (so it stays out of shell history),
   `--remove` deletes it.
 
 ## Providers
 
-Planned. The window gets a Providers group listing each provider with its
-kind, base URL and key status.
+The window's Providers group lists each `openai-compatible` provider with its
+base URL and key field, then a row to add one. `local-speech` and
+`claude-code` have nothing to set there (their options stay in the file).
 
-- **Built-ins.** `openai` (`https://api.openai.com/v1`), `nano-gpt` and
-  `groq` exist without any config, merged under the file's `[providers]`. A
-  file entry with the same name overrides one. Built-ins can't be removed,
-  but without a key they cost nothing, and the role pickers mark them
-  "(no key)". `local-speech` and `claude-code` become built-ins too, so a
-  fresh config needs no `[providers]` table at all.
-- **Adding.** Name, base URL and optional key, for `openai-compatible` only.
-  A provider table has to be written in one step (`kind` and `base_url` are
-  both required), so `Set` also takes a dictionary (`a{sv}`) and writes it
-  as a table. Adding is `Set("providers.<name>", {kind, base_url})`, then
-  `SetApiKey`.
-- **Removing** is `Reset("providers.<name>")`, which config validation
-  already refuses while a role uses the provider. Removing also deletes the
-  provider's key.
+- **Built-ins.** `openai` (`https://api.openai.com/v1`), `groq`
+  (`https://api.groq.com/openai/v1`), `nano-gpt`
+  (`https://nano-gpt.com/api/v1`), `local-speech` and `claude-code` exist
+  without any config, so a fresh config needs no `[providers]` table. They're
+  merged under the file's providers at deserialization
+  (`config::builtin_providers`), and a file entry with the same name replaces
+  one whole. `Get` returns them like any other. Their keys go by the derived
+  variable (`NANO_GPT_API_KEY`); a file entry can set `api_key_env`.
+- **Names and URLs.** Provider names are letters, digits, `-` and `_` (they
+  become TOML keys and `<NAME>_API_KEY`); `base_url` must be http(s). Both are
+  checked in `Config::validate`, so a hand edit is held to the same rules.
+- **Adding.** A provider table needs `kind` and `base_url` in one step, so
+  `Set` also takes a dictionary (`a{sv}`) and writes it as a whole `[table]`
+  (replacing one there, `kind` first). The window sends
+  `Set("providers.<name>", {kind: "openai-compatible", base_url})`, then
+  `SetApiKey` if a key was typed. Its Add button stays disabled until the
+  name is valid and unused and the URL is http(s). From the shell:
+  `vivusctl settings set providers.mine '{kind = "openai-compatible", base_url = "…"}'`.
+- **Removing** is `Reset("providers.<name>")`, behind a confirmation. It's
+  refused while a role uses the provider ("`mine` is used by the router role")
+  and for a built-in the file doesn't override; resetting an override brings
+  the built-in back. When the provider is really gone its key is deleted too
+  (keyring and `.env`); an override's removal keeps it. `BuiltinProviders()`
+  tells the window which rows get a Remove button.
+- **Applying.** Any change under `providers.<name>` drops the router (rebuilt
+  on the next turn) and that provider's `/models` cache entry.
 
 ## Later
 

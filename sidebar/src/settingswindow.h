@@ -2,6 +2,7 @@
 
 #include "dbustypes.h"
 
+#include <QHash>
 #include <QWidget>
 
 #include <functional>
@@ -62,10 +63,13 @@ private:
     QString roleValue(const RoleRow &row, const char *key) const;
     RoleRow *findRole(const QString &role);
 
-    // One openai-compatible provider's key: write-only, so a masked field to
-    // paste a new one, with where the current one lives as its placeholder.
+    // One openai-compatible provider: its base URL, Remove unless it's built
+    // in, and its key. Keys are write-only, so a masked field to paste a new
+    // one, with where the current one lives as its placeholder.
     struct KeyRow {
         QString provider;
+        QLabel *url = nullptr;
+        QPushButton *removeProvider = nullptr;
         QLineEdit *edit = nullptr;
         QPushButton *save = nullptr;
         QPushButton *remove = nullptr;
@@ -75,6 +79,12 @@ private:
     void updateKeyStatus(const QString &provider);
     void saveKey(const QString &provider, const QString &key);
     KeyRow *findKey(const QString &provider);
+    // Role pickers say "(no key)" after providers that have none.
+    QString providerLabel(const QString &provider) const;
+    void relabelProviders();
+    void removeProvider(const QString &provider);
+    void updateAddProvider();
+    void addProvider();
     void alignLabels();
 
     void updateConnected();
@@ -110,5 +120,11 @@ private:
     QGroupBox *m_keysGroup;
     QFormLayout *m_keysForm;
     std::vector<KeyRow> m_keys;
+    QHash<QString, QString> m_keyStatus;
+    QStringList m_builtins;
+    QLineEdit *m_newName;
+    QLineEdit *m_newUrl;
+    QLineEdit *m_newKey;
+    QPushButton *m_addProvider;
     std::vector<QFormLayout *> m_forms;
 };

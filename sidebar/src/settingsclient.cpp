@@ -116,13 +116,33 @@ void SettingsClient::apiKeyStatus(const QString &provider, StatusReply done)
     onReply<QString>(this, m_iface->ApiKeyStatus(provider), std::move(done));
 }
 
-void SettingsClient::setApiKey(const QString &provider, const QString &key, DoneReply done)
+static void onDone(QObject *ctx, const QDBusPendingCall &call, SettingsClient::DoneReply done)
 {
-    auto *w = new QDBusPendingCallWatcher(m_iface->SetApiKey(provider, key), this);
-    connect(w, &QDBusPendingCallWatcher::finished, this, [done = std::move(done)](QDBusPendingCallWatcher *w) {
+    auto *w = new QDBusPendingCallWatcher(call, ctx);
+    QObject::connect(w, &QDBusPendingCallWatcher::finished, ctx, [done = std::move(done)](QDBusPendingCallWatcher *w) {
         w->deleteLater();
         done(w->isError() ? w->error().message() : QString());
     });
+}
+
+void SettingsClient::setApiKey(const QString &provider, const QString &key, DoneReply done)
+{
+    onDone(this, m_iface->SetApiKey(provider, key), std::move(done));
+}
+
+void SettingsClient::set(const QString &path, const QVariant &value, DoneReply done)
+{
+    onDone(this, m_iface->Set(path, QDBusVariant(value)), std::move(done));
+}
+
+void SettingsClient::reset(const QString &path, DoneReply done)
+{
+    onDone(this, m_iface->Reset(path), std::move(done));
+}
+
+void SettingsClient::builtinProviders(ProvidersReply done)
+{
+    onReply<QStringList>(this, m_iface->BuiltinProviders(), std::move(done));
 }
 
 void SettingsClient::meterInput()

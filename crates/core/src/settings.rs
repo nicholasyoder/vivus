@@ -6,9 +6,9 @@ use std::path::Path;
 use serde_json::Value as Json;
 use toml_edit::{DocumentMut, Item, Table, TableLike};
 
-use crate::config::{Config, ConfigError};
+use crate::config::{Config, ConfigError, is_builtin_provider};
 
-pub use toml_edit::{Array, Value};
+pub use toml_edit::{Array, InlineTable, Value};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
@@ -26,6 +26,7 @@ pub enum SettingsError {
 }
 
 /// Sets (`Some`) or removes (`None`) the dotted key `path` in the config text.
+/// An inline-table value is written as a whole `[table]`, replacing one there.
 /// Returns the new text and the config it parses to; nothing is written.
 pub fn edit(
     text: &str,
@@ -38,6 +39,19 @@ pub fn edit(
         return Err(SettingsError::BadPath(path.into()));
     }
     let mut doc: DocumentMut = text.parse()?;
+    if let ["providers", name] = keys[..]
+        && value.is_none()
+        && is_builtin_provider(name)
+        && doc.get("providers").and_then(|p| p.get(name)).is_none()
+    {
+        return Err(SettingsError::Rejected(format!(
+            "`{name}` is built in and can't be removed"
+        )));
+    }
+    let removing_provider = match keys[..] {
+        ["providers", name] if value.is_none() => Some(name),
+        _ => None,
+    };
     let (last, parents) = keys.split_last().unwrap();
     let mut table: &mut dyn TableLike = doc.as_table_mut();
     for (i, key) in parents.iter().enumerate() {
@@ -56,6 +70,13 @@ pub fn edit(
             .ok_or_else(|| SettingsError::NotATable(keys[..=i].join(".")))?;
     }
     match (value, table.get_mut(last)) {
+        (Some(Value::InlineTable(t)), _) => {
+            let mut t = t.into_table();
+            t.set_implicit(false);
+            // D-Bus dictionaries arrive sorted; `kind` reads best first.
+            t.sort_values_by(|a, _, b, _| (a.get() != "kind").cmp(&(b.get() != "kind")));
+            table.insert(last, Item::Table(t));
+        }
         // Keep the old value's surrounding whitespace and trailing comment.
         (Some(mut v), Some(Item::Value(old))) => {
             *v.decor_mut() = old.decor().clone();
@@ -68,7 +89,16 @@ pub fn edit(
             table.remove(last);
         }
     }
-    finish(doc, file)
+    finish(doc, file).map_err(|e| match e {
+        SettingsError::Invalid(ConfigError::UnknownProvider { role, provider })
+            if removing_provider == Some(provider.as_str()) =>
+        {
+            SettingsError::Rejected(format!(
+                "`{provider}` is used by the {role} role; choose another provider there first"
+            ))
+        }
+        e => e,
+    })
 }
 
 fn finish(doc: DocumentMut, file: &Path) -> Result<(String, Config), SettingsError> {
@@ -167,6 +197,34 @@ echo_cancel = true
         let text = "[providers.l]\nkind = \"local-speech\"\n[roles.tts]\nprovider = \"l\"\n";
         let (text, config) = set(text, "roles.tts", None).unwrap();
         assert!(!text.contains("roles") && config.roles.tts.is_none());
+    }
+
+    #[test]
+    fn provider_tables() {
+        let mut t = toml_edit::InlineTable::new();
+        t.insert("base_url", "https://example.com/v1".into());
+        t.insert("kind", "openai-compatible".into());
+        let (text, config) = set(FILE, "providers.mine", Some(Value::InlineTable(t))).unwrap();
+        assert!(text.ends_with(
+            "[providers.mine]\nkind = \"openai-compatible\"\nbase_url = \"https://example.com/v1\"\n"
+        ));
+        assert!(config.providers.contains_key("mine"));
+        let used = format!("{text}[roles.router]\nprovider = \"mine\"\n");
+        assert!(matches!(
+            set(&used, "providers.mine", None),
+            Err(SettingsError::Rejected(m)) if m.contains("used by the router role")
+        ));
+        let (text, config) = set(&text, "providers.mine", None).unwrap();
+        assert!(!text.contains("mine") && !config.providers.contains_key("mine"));
+
+        assert!(matches!(
+            set(FILE, "providers.groq", None),
+            Err(SettingsError::Rejected(m)) if m.contains("built in")
+        ));
+        // An override of a built-in can go; the built-in comes back.
+        let text = "[providers.groq]\nkind = \"openai-compatible\"\nbase_url = \"http://x\"\n";
+        let (_, config) = set(text, "providers.groq", None).unwrap();
+        assert!(config.providers.contains_key("groq"));
     }
 
     #[test]

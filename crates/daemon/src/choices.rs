@@ -225,9 +225,15 @@ kind = "local-speech"
     #[test]
     fn providers_by_role() {
         let c = config(PROVIDERS);
-        assert_eq!(providers(&c, "stt").unwrap(), ["local"]);
-        assert_eq!(providers(&c, "router").unwrap(), ["groq"]);
-        assert_eq!(providers(&c, "agent").unwrap(), ["cc", "groq"]);
+        assert_eq!(providers(&c, "stt").unwrap(), ["local", "local-speech"]);
+        assert_eq!(
+            providers(&c, "router").unwrap(),
+            ["groq", "nano-gpt", "openai"]
+        );
+        assert_eq!(
+            providers(&c, "agent").unwrap(),
+            ["cc", "claude-code", "groq", "nano-gpt", "openai"]
+        );
         assert!(providers(&c, "nope").is_err());
     }
 

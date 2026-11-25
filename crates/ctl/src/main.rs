@@ -63,6 +63,8 @@ enum SettingsCmd {
     /// Print the effective config as JSON, or one value by dotted path.
     Get { path: Option<String> },
     /// Set a dotted path (`audio.input`) to a TOML value; bare words are strings.
+    /// An inline table writes a whole table: `providers.mine '{kind =
+    /// "openai-compatible", base_url = "https://…/v1"}'`.
     Set { path: String, value: String },
     /// Remove a key so its default applies.
     Reset { path: String },
@@ -296,6 +298,13 @@ fn to_variant(v: &toml_edit::Value) -> anyhow::Result<zvariant::Value<'static>> 
             .map(|v| to_variant(v).map(zvariant::Value::new))
             .collect::<anyhow::Result<Vec<_>>>()?
             .into(),
-        _ => anyhow::bail!("only strings, numbers, booleans and arrays can be set"),
+        T::InlineTable(t) => {
+            let mut dict = std::collections::HashMap::new();
+            for (k, v) in t.iter() {
+                dict.insert(k.to_owned(), zvariant::Value::new(to_variant(v)?));
+            }
+            zvariant::Value::from(dict)
+        }
+        _ => anyhow::bail!("only strings, numbers, booleans, arrays and tables can be set"),
     })
 }
