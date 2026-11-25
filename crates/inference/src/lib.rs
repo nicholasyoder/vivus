@@ -10,6 +10,10 @@ mod client;
 pub mod partial;
 mod sse;
 
-pub use chat::{ChatRequest, Event, FinishReason, Message, Reply, Tool, ToolCall, ToolChoice, Usage};
+pub use chat::{
+    ChatRequest, Event, FinishReason, Message, Reply, Tool, ToolCall, ToolChoice, Usage,
+};
+pub use claude_code::{
+    ClaudeCode, ClaudeError, ClaudeEvent, ClaudeRequest, ClaudeResult, ClaudeRun,
+};
 pub use client::{ChatStream, Client, Error};
-pub use claude_code::{ClaudeCode, ClaudeError, ClaudeEvent, ClaudeRequest, ClaudeResult, ClaudeRun};

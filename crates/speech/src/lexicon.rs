@@ -43,10 +43,13 @@ fn xdg_pronunciations(var: &str, fallback: &str) -> Option<PathBuf> {
 /// (`$XDG_CONFIG_HOME/vivus/pronunciations.txt`), then the learned ones
 /// ([`learned_pronunciation_file`]). Either may not exist.
 pub fn default_pronunciation_files() -> Vec<PathBuf> {
-    [xdg_pronunciations("XDG_CONFIG_HOME", ".config"), learned_pronunciation_file()]
-        .into_iter()
-        .flatten()
-        .collect()
+    [
+        xdg_pronunciations("XDG_CONFIG_HOME", ".config"),
+        learned_pronunciation_file(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// Where looked-up pronunciations are cached: `$XDG_DATA_HOME/vivus/pronunciations.txt`.
@@ -109,7 +112,11 @@ impl Lexicon {
     }
 
     fn insert(&mut self, key: &str, phonemes: String) {
-        let key = key.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+        let key = key
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
         if key.is_empty() {
             return;
         }
@@ -198,7 +205,9 @@ impl Lexicon {
     pub fn contains(&self, word: &str) -> bool {
         self.lookup(word).is_some()
             || (word.contains('-')
-                && word.split('-').all(|p| p.is_empty() || self.lookup(p).is_some()))
+                && word
+                    .split('-')
+                    .all(|p| p.is_empty() || self.lookup(p).is_some()))
     }
 
     /// Words of `text` (already normalized) that have no pronunciation, in order, deduplicated.
@@ -213,21 +222,32 @@ impl Lexicon {
     fn suffixed(&self, word: &str) -> Option<String> {
         let set = self.set;
         let ri = set.reduced_i();
-        let strip = |n: usize| word.get(..word.len().checked_sub(n)?).filter(|b| b.len() >= 2);
+        let strip = |n: usize| {
+            word.get(..word.len().checked_sub(n)?)
+                .filter(|b| b.len() >= 2)
+        };
         // The first candidate base the lexicon knows.
         let base = |cands: &[Option<String>]| {
-            cands.iter().flatten().find_map(|b| self.exact(b).map(str::to_owned))
+            cands
+                .iter()
+                .flatten()
+                .find_map(|b| self.exact(b).map(str::to_owned))
         };
 
         if let Some(b) = word.strip_suffix("'s") {
-            let p = self.exact(b).map(str::to_owned).or_else(|| self.suffixed(b))?;
+            let p = self
+                .exact(b)
+                .map(str::to_owned)
+                .or_else(|| self.suffixed(b))?;
             return Some(plural(&p, ri));
         }
         if word.ends_with('s') && !word.ends_with("ss") && !word.ends_with("us") {
             let cands = [
                 word.strip_suffix("ies").map(|b| format!("{b}y")),
                 strip(1).map(str::to_owned),
-                word.strip_suffix("es").and_then(|_| strip(2)).map(str::to_owned),
+                word.strip_suffix("es")
+                    .and_then(|_| strip(2))
+                    .map(str::to_owned),
             ];
             return base(&cands).map(|p| plural(&p, ri));
         }
@@ -377,7 +397,9 @@ enum Token<'a> {
 }
 
 /// Punctuation both models have tokens for, or that they treat as a pause.
-const PUNCT: &[char] = &[',', '.', ';', ':', '!', '?', '—', '…', '(', ')', '"', '“', '”'];
+const PUNCT: &[char] = &[
+    ',', '.', ';', ':', '!', '?', '—', '…', '(', ')', '"', '“', '”',
+];
 
 fn tokenize(text: &str) -> Vec<Token<'_>> {
     let mut out = Vec::new();
@@ -433,7 +455,11 @@ fn past(base: &str, reduced_i: &str, set: PhoneSet) -> String {
 fn join_vowel_suffix(base: &str, suffix: &str, set: PhoneSet) -> String {
     let mut chars: Vec<char> = base.chars().collect();
     let n = chars.len();
-    if set.is_american() && n >= 2 && chars[n - 1] == 't' && (is_vowel(chars[n - 2]) || chars[n - 2] == 'ɹ') {
+    if set.is_american()
+        && n >= 2
+        && chars[n - 1] == 't'
+        && (is_vowel(chars[n - 2]) || chars[n - 2] == 'ɹ')
+    {
         chars[n - 1] = 'ɾ';
     }
     chars.into_iter().collect::<String>() + suffix
@@ -457,7 +483,12 @@ fn ends_vowel_consonant(stem: &str) -> bool {
     let v = |c: u8| b"aeiou".contains(&c);
     match b.as_slice() {
         [c, x, rest @ ..] => {
-            !v(*c) && *c != b'w' && *c != b'x' && *c != b'y' && v(*x) && rest.first().is_none_or(|r| !v(*r))
+            !v(*c)
+                && *c != b'w'
+                && *c != b'x'
+                && *c != b'y'
+                && v(*x)
+                && rest.first().is_none_or(|r| !v(*r))
         }
         _ => false,
     }
@@ -512,7 +543,10 @@ mod tests {
         assert_eq!(r.phonemes, "həlˈO, wˈɜɹld. ˈOpən ðə bˈɑks!");
         assert_eq!(r.missing, ["zorbleflax"]);
         let r = l.phonemize("A cat, the open box, a hello. Plan A P I. The");
-        assert_eq!(r.phonemes, "ɐ kˈæt, ði ˈOpən bˈɑks, ɐ həlˈO. plˈæn A pˈi ˈI. ðə");
+        assert_eq!(
+            r.phonemes,
+            "ɐ kˈæt, ði ˈOpən bˈɑks, ɐ həlˈO. plˈæn A pˈi ˈI. ðə"
+        );
         let r = l.phonemize("\"Hello\" (world) open-box 'cat'");
         assert_eq!(r.phonemes, "\"həlˈO\" (wˈɜɹld) ˈOpən bˈɑks kˈæt");
         assert!(r.missing.is_empty());
@@ -523,13 +557,22 @@ mod tests {
         let mut l = Lexicon::new(PhoneSet::Espeak);
         l.add_lexicon("the || ð ə\nrecord || ɹ ᵻ k ˈɔː ɹ d\nthe record || ð ə   ɹ ˈɛ k ɚ d\n");
         assert_eq!(l.phonemize("Play the record.").missing, ["Play"]);
-        assert_eq!(l.phonemize("the record, record").phonemes, "ðə ɹˈɛkɚd, ɹᵻkˈɔːɹd");
+        assert_eq!(
+            l.phonemize("the record, record").phonemes,
+            "ðə ɹˈɛkɚd, ɹᵻkˈɔːɹd"
+        );
     }
 
     #[test]
     fn arpabet_entries() {
         let mut l = Lexicon::new(PhoneSet::MisakiUs);
-        assert_eq!(l.add_arpabet("# user\nHYPRLAND  HH AY1 P ER0 L AE2 N D\nBAD XX1\n", "test"), 1);
+        assert_eq!(
+            l.add_arpabet(
+                "# user\nHYPRLAND  HH AY1 P ER0 L AE2 N D\nBAD XX1\n",
+                "test"
+            ),
+            1
+        );
         l.add_lexicon("hyprland h ˈI\n");
         assert_eq!(l.lookup("Hyprland").as_deref(), Some("hˈIpəɹlˌænd"));
         assert_eq!(l.lookup("Hyprland's").as_deref(), Some("hˈIpəɹlˌændz"));

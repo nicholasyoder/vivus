@@ -6,7 +6,12 @@ use vivus_apps::{Apps, Match};
 /// is the tool result the model must answer.
 pub fn launch_app(spoken: &str) -> Result<String, String> {
     let apps = Apps::load();
-    let names = |v: &[&vivus_apps::App]| v.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+    let names = |v: &[&vivus_apps::App]| {
+        v.iter()
+            .map(|a| a.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     let app = match apps.find(spoken) {
         Match::Found(app) => app,
         Match::Ambiguous(v) => {

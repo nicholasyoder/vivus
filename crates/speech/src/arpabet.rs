@@ -45,11 +45,30 @@ const VOWELS: &[(&str, [(&str, &str); 3])] = &[
 
 /// Consonant: (espeak, misaki). They differ only in the affricates' ligatures.
 const CONSONANTS: &[(&str, &str, &str)] = &[
-    ("B", "b", "b"), ("CH", "tʃ", "ʧ"), ("D", "d", "d"), ("DH", "ð", "ð"), ("F", "f", "f"),
-    ("G", "ɡ", "ɡ"), ("HH", "h", "h"), ("JH", "dʒ", "ʤ"), ("K", "k", "k"), ("L", "l", "l"),
-    ("M", "m", "m"), ("N", "n", "n"), ("NG", "ŋ", "ŋ"), ("P", "p", "p"), ("R", "ɹ", "ɹ"),
-    ("S", "s", "s"), ("SH", "ʃ", "ʃ"), ("T", "t", "t"), ("TH", "θ", "θ"), ("V", "v", "v"),
-    ("W", "w", "w"), ("Y", "j", "j"), ("Z", "z", "z"), ("ZH", "ʒ", "ʒ"),
+    ("B", "b", "b"),
+    ("CH", "tʃ", "ʧ"),
+    ("D", "d", "d"),
+    ("DH", "ð", "ð"),
+    ("F", "f", "f"),
+    ("G", "ɡ", "ɡ"),
+    ("HH", "h", "h"),
+    ("JH", "dʒ", "ʤ"),
+    ("K", "k", "k"),
+    ("L", "l", "l"),
+    ("M", "m", "m"),
+    ("N", "n", "n"),
+    ("NG", "ŋ", "ŋ"),
+    ("P", "p", "p"),
+    ("R", "ɹ", "ɹ"),
+    ("S", "s", "s"),
+    ("SH", "ʃ", "ʃ"),
+    ("T", "t", "t"),
+    ("TH", "θ", "θ"),
+    ("V", "v", "v"),
+    ("W", "w", "w"),
+    ("Y", "j", "j"),
+    ("Z", "z", "z"),
+    ("ZH", "ʒ", "ʒ"),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,10 +96,16 @@ pub fn parse(phones: &str) -> Result<Vec<Phone>, String> {
                 None => (upper.as_str(), None),
             };
             if let Some((v, _)) = VOWELS.iter().find(|(v, _)| *v == base) {
-                return Ok(Phone { symbol: v, stress: Some(digit.unwrap_or(0)) });
+                return Ok(Phone {
+                    symbol: v,
+                    stress: Some(digit.unwrap_or(0)),
+                });
             }
             match CONSONANTS.iter().find(|(c, ..)| *c == base) {
-                Some((c, ..)) if digit.is_none() => Ok(Phone { symbol: c, stress: None }),
+                Some((c, ..)) if digit.is_none() => Ok(Phone {
+                    symbol: c,
+                    stress: None,
+                }),
                 _ => Err(format!("unknown phone `{p}`")),
             }
         })

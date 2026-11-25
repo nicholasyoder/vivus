@@ -70,7 +70,10 @@ mod tests {
     fn split_across_chunks_and_crlf() {
         let mut p = SseParser::default();
         assert!(p.push(b": keep-alive\r\n\r\ndata: {\"a\"").is_empty());
-        assert_eq!(p.push(b":1}\r\n\r\ndata:[DONE]\n\n"), ["{\"a\":1}", "[DONE]"]);
+        assert_eq!(
+            p.push(b":1}\r\n\r\ndata:[DONE]\n\n"),
+            ["{\"a\":1}", "[DONE]"]
+        );
         assert_eq!(p.finish(), None);
     }
 

@@ -15,11 +15,25 @@ pub fn launch(apps: &Apps, app: &App, token: Option<&str>) -> std::io::Result<()
         return Err(std::io::Error::other("empty Exec"));
     }
     if app.terminal {
-        argv.splice(0..0, terminal(apps).ok_or_else(|| std::io::Error::other("no terminal emulator"))?);
+        argv.splice(
+            0..0,
+            terminal(apps).ok_or_else(|| std::io::Error::other("no terminal emulator"))?,
+        );
     }
     if systemd_user() && find_program("systemd-run").is_some() {
-        let unit = format!("--unit=app-vivus-{}-{}", escape_unit(app.app_id()), random());
-        let scope = ["systemd-run", "--user", "--scope", "--quiet", "--collect", &unit];
+        let unit = format!(
+            "--unit=app-vivus-{}-{}",
+            escape_unit(app.app_id()),
+            random()
+        );
+        let scope = [
+            "systemd-run",
+            "--user",
+            "--scope",
+            "--quiet",
+            "--collect",
+            &unit,
+        ];
         argv.splice(0..0, scope.map(str::to_owned));
     }
     let mut cmd = Command::new(&argv[0]);
@@ -32,7 +46,8 @@ pub fn launch(apps: &Apps, app: &App, token: Option<&str>) -> std::io::Result<()
         cmd.current_dir(dir);
     }
     if let Some(t) = token {
-        cmd.env("XDG_ACTIVATION_TOKEN", t).env("DESKTOP_STARTUP_ID", t);
+        cmd.env("XDG_ACTIVATION_TOKEN", t)
+            .env("DESKTOP_STARTUP_ID", t);
     }
     use std::os::unix::process::CommandExt;
     let mut child = cmd.spawn()?;

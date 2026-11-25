@@ -41,7 +41,11 @@ async fn read_request(sock: &mut TcpStream) -> String {
         if let Some(end) = text.find("\r\n\r\n") {
             let len: usize = text
                 .lines()
-                .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse().unwrap()))
+                .find_map(|l| {
+                    l.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .map(|v| v.trim().parse().unwrap())
+                })
                 .unwrap_or(0);
             if buf.len() >= end + 4 + len {
                 return text.into_owned();
@@ -66,8 +70,12 @@ async fn streams_text_and_tool_calls() {
         ": OPENROUTER PROCESSING\n\n".into(),
         sse(r#"{"choices":[{"delta":{"content":"He"}}]}"#),
         sse(r#"{"choices":[{"delta":{"content":"llo"}}]}"#),
-        sse(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"speak","arguments":"{\"text\":\"Hi"}}]}}]}"#),
-        sse(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"}"}}]},"finish_reason":"tool_calls"}]}"#),
+        sse(
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"speak","arguments":"{\"text\":\"Hi"}}]}}]}"#,
+        ),
+        sse(
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"}"}}]},"finish_reason":"tool_calls"}]}"#,
+        ),
         "data: [DONE]\n\n".into(),
     ];
     let (client, rx) = serve(SSE, parts).await;
@@ -88,13 +96,17 @@ async fn streams_text_and_tool_calls() {
 
     let (req, _) = rx.await.unwrap();
     assert!(req.starts_with("POST /v1/chat/completions"));
-    assert!(req.to_ascii_lowercase().contains("authorization: bearer sk-test"));
+    assert!(
+        req.to_ascii_lowercase()
+            .contains("authorization: bearer sk-test")
+    );
     assert!(req.contains(r#""stream":true"#));
 }
 
 #[tokio::test]
 async fn json_body_instead_of_stream() {
-    let body = r#"{"choices":[{"message":{"role":"assistant","content":"Hi"},"finish_reason":"stop"}]}"#;
+    let body =
+        r#"{"choices":[{"message":{"role":"assistant","content":"Hi"},"finish_reason":"stop"}]}"#;
     let (client, _rx) = serve(
         "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\n\r\n",
         vec![body.into()],
@@ -112,7 +124,10 @@ async fn http_and_in_stream_errors() {
     )
     .await;
     match client.chat(&request()).await {
-        Err(Error::Status { status: 429, message }) => assert_eq!(message, "rate limited"),
+        Err(Error::Status {
+            status: 429,
+            message,
+        }) => assert_eq!(message, "rate limited"),
         other => panic!("{:?}", other.err()),
     }
 
@@ -129,10 +144,16 @@ async fn dropping_the_stream_closes_the_connection() {
     parts.extend((0..2000).map(|_| ": ping\n\n".to_string()));
     let (client, rx) = serve(SSE, parts).await;
     let mut stream = client.chat(&request()).await.unwrap();
-    assert_eq!(stream.next().await.unwrap().unwrap(), Event::Text("one".into()));
+    assert_eq!(
+        stream.next().await.unwrap().unwrap(),
+        Event::Text("one".into())
+    );
     drop(stream);
     // The server's writes start failing well before it would finish (2000 × 5 ms).
-    let (_, mut sock) = tokio::time::timeout(Duration::from_secs(3), rx).await.unwrap().unwrap();
+    let (_, mut sock) = tokio::time::timeout(Duration::from_secs(3), rx)
+        .await
+        .unwrap()
+        .unwrap();
     let mut b = [0u8; 1];
     assert_eq!(sock.read(&mut b).await.unwrap_or(0), 0);
 }

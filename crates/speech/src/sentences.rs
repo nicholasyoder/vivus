@@ -128,7 +128,11 @@ mod tests {
     fn keeps_abbreviations_and_quotes() {
         assert_eq!(
             split(&["Dr. Smith met e.g. the U.S. team on Nov. 3. He said \"hi.\" Then left."]),
-            ["Dr. Smith met e.g. the U.S. team on Nov. 3.", "He said \"hi.\"", "Then left."]
+            [
+                "Dr. Smith met e.g. the U.S. team on Nov. 3.",
+                "He said \"hi.\"",
+                "Then left."
+            ]
         );
     }
 

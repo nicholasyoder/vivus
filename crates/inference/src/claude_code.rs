@@ -45,7 +45,9 @@ pub struct ClaudeRequest {
 pub enum ClaudeEvent {
     /// A text block of an assistant message (whole blocks, not deltas).
     Text(String),
-    ToolUse { name: String },
+    ToolUse {
+        name: String,
+    },
     /// The final answer; always the last event.
     Result(ClaudeResult),
 }

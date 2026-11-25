@@ -168,7 +168,9 @@ impl Speaker {
 
     fn queue(&self, sentence: String) {
         self.lookup(&sentence, true);
-        let _ = self.tx.send(Msg::Sentence(*self.generation.lock().unwrap(), sentence));
+        let _ = self
+            .tx
+            .send(Msg::Sentence(*self.generation.lock().unwrap(), sentence));
     }
 
     fn lookup(&self, text: &str, urgent: bool) {

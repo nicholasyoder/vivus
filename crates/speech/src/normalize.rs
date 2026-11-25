@@ -41,8 +41,18 @@ fn p(pattern: &str, f: Pass) -> (Regex, Pass) {
 }
 
 const MONTHS: &[&str] = &[
-    "January", "February", "March", "April", "May", "June", "July", "August", "September",
-    "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 ];
 const MONTH: &str = r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)";
 const NUM: &str = r"(\d+(?:,\d{3})*(?:\.\d+)?)";
@@ -58,10 +68,15 @@ static ADDRESSES: LazyLock<Vec<(Regex, Pass)>> = LazyLock::new(|| {
             format!("{} at {}", dotted(&c[1]), dotted(&c[2]))
         }),
         p(
-            &format!(r"(?i)\b(?:https?://)?(?:www\.)?((?:[a-z0-9-]+\.)+(?:{TLDS}))\b(?:/[^\s]*[^\s.,!?;:)])?/?"),
+            &format!(
+                r"(?i)\b(?:https?://)?(?:www\.)?((?:[a-z0-9-]+\.)+(?:{TLDS}))\b(?:/[^\s]*[^\s.,!?;:)])?/?"
+            ),
             |c, _| dotted(&c[1]),
         ),
-        p(r"(?i)\bhttps?://([\w.-]+)(?:[/:?#][^\s]*[^\s.,!?;:)])?", |c, _| dotted(&c[1])),
+        p(
+            r"(?i)\bhttps?://([\w.-]+)(?:[/:?#][^\s]*[^\s.,!?;:)])?",
+            |c, _| dotted(&c[1]),
+        ),
         // Uppercase so the acronym pass spells the ones the lexicon lacks.
         p(&format!(r"\b([\w-]+)\.({FILE_EXTS})\b"), |c, _| {
             format!("{} dot {}", &c[1], c[2].to_uppercase())
@@ -100,10 +115,18 @@ static PASSES: LazyLock<Vec<(Regex, Pass)>> = LazyLock::new(|| {
             &format!(r"\b(Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun)\.?,(\s+(?:{MONTH}|\d))"),
             |c, _| format!("{},{}", weekday(&c[1]), &c[2]),
         ),
-        p(&format!(r"\b{MONTH}\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b(?:,?\s+{YEAR}\b)?"), |c, _| {
-            let year = c.get(3).map(|y| format!(", {}", year(num(y.as_str()))));
-            format!("{} {}{}", month(&c[1]), ordinal(num(&c[2])), year.unwrap_or_default())
-        }),
+        p(
+            &format!(r"\b{MONTH}\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b(?:,?\s+{YEAR}\b)?"),
+            |c, _| {
+                let year = c.get(3).map(|y| format!(", {}", year(num(y.as_str()))));
+                format!(
+                    "{} {}{}",
+                    month(&c[1]),
+                    ordinal(num(&c[2])),
+                    year.unwrap_or_default()
+                )
+            },
+        ),
         p(
             &format!(r"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?{MONTH}\b\.?(?:,?\s+{YEAR}\b)?"),
             |c, _| {
@@ -116,28 +139,31 @@ static PASSES: LazyLock<Vec<(Regex, Pass)>> = LazyLock::new(|| {
             format!("{} {}", month(&c[1]), year(num(&c[2])))
         }),
         // Times.
-        p(r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s?([AaPp])\.?[Mm]\b(\.)?)?", |c, text| {
-            let (h, m) = (num(&c[1]), num(&c[2]));
-            if h > 24 || m > 59 {
-                return c[0].to_owned();
-            }
-            let ampm = c.get(4).map(|x| x.as_str().to_ascii_uppercase());
-            let mut s = cardinal(h);
-            match m {
-                0 if ampm.is_none() && h <= 12 => s.push_str(" o'clock"),
-                0 if ampm.is_none() => s.push_str(" hundred"),
-                0 => {}
-                1..=9 => s += &format!(" oh {}", cardinal(m)),
-                _ => s += &format!(" {}", cardinal(m)),
-            }
-            if let Some(sec) = c.get(3) {
-                s += &format!(" and {} seconds", cardinal(num(sec.as_str())));
-            }
-            if let Some(x) = ampm {
-                s += &format!(" {x} M");
-            }
-            s + keep_stop(c.get(5).is_some(), text, c.get(0).unwrap().end())
-        }),
+        p(
+            r"\b(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s?([AaPp])\.?[Mm]\b(\.)?)?",
+            |c, text| {
+                let (h, m) = (num(&c[1]), num(&c[2]));
+                if h > 24 || m > 59 {
+                    return c[0].to_owned();
+                }
+                let ampm = c.get(4).map(|x| x.as_str().to_ascii_uppercase());
+                let mut s = cardinal(h);
+                match m {
+                    0 if ampm.is_none() && h <= 12 => s.push_str(" o'clock"),
+                    0 if ampm.is_none() => s.push_str(" hundred"),
+                    0 => {}
+                    1..=9 => s += &format!(" oh {}", cardinal(m)),
+                    _ => s += &format!(" {}", cardinal(m)),
+                }
+                if let Some(sec) = c.get(3) {
+                    s += &format!(" and {} seconds", cardinal(num(sec.as_str())));
+                }
+                if let Some(x) = ampm {
+                    s += &format!(" {x} M");
+                }
+                s + keep_stop(c.get(5).is_some(), text, c.get(0).unwrap().end())
+            },
+        ),
         p(r"\b(\d{1,2})\s?([AaPp])\.?[Mm]\b(\.)?", |c, text| {
             let h = num(&c[1]);
             if h > 12 {
@@ -147,20 +173,32 @@ static PASSES: LazyLock<Vec<(Regex, Pass)>> = LazyLock::new(|| {
             format!("{} {} M{stop}", cardinal(h), c[2].to_ascii_uppercase())
         }),
         // Decades: "1990s", "the '80s".
-        p(r"\b(1[1-9]|20)(\d)0s\b", |c, _| plural(&year(num(&c[1]) * 100 + num(&c[2]) * 10))),
-        p(r"(?:\B'|\b)([2-9])0s\b", |c, _| plural(&cardinal(num(&c[1]) * 10))),
+        p(r"\b(1[1-9]|20)(\d)0s\b", |c, _| {
+            plural(&year(num(&c[1]) * 100 + num(&c[2]) * 10))
+        }),
+        p(r"(?:\B'|\b)([2-9])0s\b", |c, _| {
+            plural(&cardinal(num(&c[1]) * 10))
+        }),
         // Years after words that introduce them, and year ranges.
         p(&format!(r"\b{YEAR}\s?[–-]\s?{YEAR}\b"), |c, _| {
             format!("{} to {}", year(num(&c[1])), year(num(&c[2])))
         }),
         p(
-            &format!(r"(?i)\b(in|since|by|from|until|till|through|before|after|year|circa|during|around|of)\s+{YEAR}\b"),
+            &format!(
+                r"(?i)\b(in|since|by|from|until|till|through|before|after|year|circa|during|around|of)\s+{YEAR}\b"
+            ),
             |c, _| format!("{} {}", &c[1], year(num(&c[2]))),
         ),
         // Signs, ranges, percent, units, ordinals, fractions.
-        p(r"(^|[\s(=:,])-(\d)", |c, _| format!("{}minus {}", &c[1], &c[2])),
-        p(r"(^|\s)[~≈]\s?(\d)", |c, _| format!("{}about {}", &c[1], &c[2])),
-        p(r"(\d)\s?–\s?(\d)", |c, _| format!("{} to {}", &c[1], &c[2])),
+        p(r"(^|[\s(=:,])-(\d)", |c, _| {
+            format!("{}minus {}", &c[1], &c[2])
+        }),
+        p(r"(^|\s)[~≈]\s?(\d)", |c, _| {
+            format!("{}about {}", &c[1], &c[2])
+        }),
+        p(r"(\d)\s?–\s?(\d)", |c, _| {
+            format!("{} to {}", &c[1], &c[2])
+        }),
         p(r"\b(\d{1,4})-(\d{1,4})\b", |c, _| {
             if num(&c[2]) > num(&c[1]) {
                 format!("{} to {}", &c[1], &c[2])
@@ -168,9 +206,15 @@ static PASSES: LazyLock<Vec<(Regex, Pass)>> = LazyLock::new(|| {
                 c[0].to_owned()
             }
         }),
-        p(&format!(r"{NUM}\s?%"), |c, _| format!("{} percent", number(&c[1]))),
+        p(&format!(r"{NUM}\s?%"), |c, _| {
+            format!("{} percent", number(&c[1]))
+        }),
         p(&format!(r"{NUM}\s?(?:°\s?([CF])\b|°)"), |c, _| {
-            let unit = if c[1].trim() == "1" { "degree" } else { "degrees" };
+            let unit = if c[1].trim() == "1" {
+                "degree"
+            } else {
+                "degrees"
+            };
             match c.get(2).map(|m| m.as_str()) {
                 Some("C") => format!("{} {unit} Celsius", number(&c[1])),
                 Some(_) => format!("{} {unit} Fahrenheit", number(&c[1])),
@@ -183,43 +227,57 @@ static PASSES: LazyLock<Vec<(Regex, Pass)>> = LazyLock::new(|| {
             format!("{} {unit}", number(&c[1]))
         }),
         p(r"\b(\d+)(st|nd|rd|th)\b", |c, _| ordinal(num(&c[1]))),
-        p(r"\b(\d)/([2-9]|10)\b", |c, _| fraction(num(&c[1]), num(&c[2]))),
+        p(r"\b(\d)/([2-9]|10)\b", |c, _| {
+            fraction(num(&c[1]), num(&c[2]))
+        }),
         p(r"#(\d)", |c, _| format!("number {}", &c[1])),
         p(r"\bNo\.\s?(\d)", |c, _| format!("number {}", &c[1])),
         // Version numbers and IP addresses, then every remaining number.
         p(r"\b\d+(?:\.\d+){2,}\b", |c, _| {
-            c[0].split('.').map(|p| cardinal(num(p))).collect::<Vec<_>>().join(" point ")
+            c[0].split('.')
+                .map(|p| cardinal(num(p)))
+                .collect::<Vec<_>>()
+                .join(" point ")
         }),
         p(NUM, |c, text| {
             let m = c.get(0).unwrap();
             let before = text[..m.start()].chars().next_back();
             let after = text[m.end()..].chars().next();
-            let pad = |c: Option<char>| if c.is_some_and(char::is_alphanumeric) { " " } else { "" };
+            let pad = |c: Option<char>| {
+                if c.is_some_and(char::is_alphanumeric) {
+                    " "
+                } else {
+                    ""
+                }
+            };
             format!("{}{}{}", pad(before), number(&c[1]), pad(after))
         }),
         // Abbreviations.
         p(r"\bDr\.(\s+[A-Z])", |c, _| format!("Doctor{}", &c[1])),
         p(r"\bSt\.(\s+[A-Z])", |c, _| format!("Saint{}", &c[1])),
-        p(r"\b(Mr|Mrs|Ms|Prof|Jr|Sr|Mt|Ave|Dr|St|vs|approx|etc|e\.g|i\.e)\.", |c, text| {
-            let end = c.get(0).unwrap().end();
-            match &c[1] {
-                "Mr" => "Mister".into(),
-                "Mrs" => "Missus".into(),
-                "Ms" => "Miss".into(),
-                "Prof" => "Professor".into(),
-                "Jr" => "Junior".into(),
-                "Sr" => "Senior".into(),
-                "Mt" => "Mount".into(),
-                "Ave" => format!("Avenue{}", keep_stop(true, text, end)),
-                "Dr" => format!("Drive{}", keep_stop(true, text, end)),
-                "St" => format!("Street{}", keep_stop(true, text, end)),
-                "vs" => "versus".into(),
-                "approx" => "approximately".into(),
-                "etc" => format!("and so on{}", keep_stop(true, text, end)),
-                "e.g" => "for example".into(),
-                _ => "that is".into(),
-            }
-        }),
+        p(
+            r"\b(Mr|Mrs|Ms|Prof|Jr|Sr|Mt|Ave|Dr|St|vs|approx|etc|e\.g|i\.e)\.",
+            |c, text| {
+                let end = c.get(0).unwrap().end();
+                match &c[1] {
+                    "Mr" => "Mister".into(),
+                    "Mrs" => "Missus".into(),
+                    "Ms" => "Miss".into(),
+                    "Prof" => "Professor".into(),
+                    "Jr" => "Junior".into(),
+                    "Sr" => "Senior".into(),
+                    "Mt" => "Mount".into(),
+                    "Ave" => format!("Avenue{}", keep_stop(true, text, end)),
+                    "Dr" => format!("Drive{}", keep_stop(true, text, end)),
+                    "St" => format!("Street{}", keep_stop(true, text, end)),
+                    "vs" => "versus".into(),
+                    "approx" => "approximately".into(),
+                    "etc" => format!("and so on{}", keep_stop(true, text, end)),
+                    "e.g" => "for example".into(),
+                    _ => "that is".into(),
+                }
+            },
+        ),
         p(r"\bvs\b", |_, _| "versus".into()),
         p(r"\b(?i:w)/\s", |_, _| "with ".into()),
         p(r"\band/or\b", |_, _| "and or".into()),
@@ -294,8 +352,8 @@ fn clean_symbols(text: &str) -> String {
     for c in text.chars() {
         match c {
             '’' | '‘' => out.push('\''),
-            '"' | '`' | '“' | '”' | '„' | '«' | '»' | '*' | '_' | '|' | '^' | '<' | '>' | '[' | ']'
-            | '{' | '}' | '\\' => out.push(' '),
+            '"' | '`' | '“' | '”' | '„' | '«' | '»' | '*' | '_' | '|' | '^' | '<' | '>' | '['
+            | ']' | '{' | '}' | '\\' => out.push(' '),
             '(' | ')' => out.push_str(", "),
             '—' => out.push_str(", "),
             '&' => out.push_str(" and "),
@@ -309,7 +367,8 @@ fn clean_symbols(text: &str) -> String {
         }
     }
     // A leading "#" is a markdown heading; "#5" is handled later.
-    out.trim_start_matches(|c: char| c == '#' || c.is_whitespace()).replace("# ", " ")
+    out.trim_start_matches(|c: char| c == '#' || c.is_whitespace())
+        .replace("# ", " ")
 }
 
 /// Some spoken-as-letters acronyms are also ordinary words in the lexicon.
@@ -373,14 +432,20 @@ fn respell(text: &str, lexicon: &Lexicon) -> String {
                 "ve" => "have",
                 _ => "",
             };
-            return if full.is_empty() { base.to_owned() } else { format!("{base} {full}") };
+            return if full.is_empty() {
+                base.to_owned()
+            } else {
+                format!("{base} {full}")
+            };
         }
         if let Some(parts) = camel_parts(word).filter(|p| p.iter().all(|p| lexicon.contains(p))) {
             return parts.join(" ");
         }
         let lower = word.to_lowercase();
         for (prefix, spellings) in PREFIXES {
-            let Some(base) = lower.strip_prefix(prefix) else { continue };
+            let Some(base) = lower.strip_prefix(prefix) else {
+                continue;
+            };
             let spelled = spellings.iter().find(|s| lexicon.contains(s));
             if let Some(spelled) = spelled.filter(|_| base.len() > 2 && lexicon.contains(base)) {
                 return format!("{spelled} {base}");
@@ -443,7 +508,10 @@ fn keep_stop(consumed: bool, text: &str, end: usize) -> &'static str {
 }
 
 fn dotted(s: &str) -> String {
-    s.split('.').filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" dot ")
+    s.split('.')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join(" dot ")
 }
 
 fn num(s: &str) -> u64 {
@@ -455,8 +523,15 @@ fn month(s: &str) -> &'static str {
 }
 
 fn weekday(s: &str) -> &'static str {
-    const DAYS: &[&str] =
-        &["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const DAYS: &[&str] = &[
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
     DAYS.iter().find(|d| d.starts_with(&s[..3])).unwrap()
 }
 
@@ -534,14 +609,38 @@ fn plural(words: &str) -> String {
 }
 
 const ONES: &[&str] = &[
-    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
     "nineteen",
 ];
 const TENS: &[&str] = &[
     "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
 ];
-const SCALES: &[&str] = &["", "thousand", "million", "billion", "trillion", "quadrillion"];
+const SCALES: &[&str] = &[
+    "",
+    "thousand",
+    "million",
+    "billion",
+    "trillion",
+    "quadrillion",
+];
 
 pub fn cardinal(n: u64) -> String {
     if n == 0 {
@@ -654,7 +753,10 @@ mod tests {
         assert_eq!(cardinal(0), "zero");
         assert_eq!(cardinal(21), "twenty-one");
         assert_eq!(cardinal(100), "one hundred");
-        assert_eq!(cardinal(1_234_567), "one million two hundred thirty-four thousand five hundred sixty-seven");
+        assert_eq!(
+            cardinal(1_234_567),
+            "one million two hundred thirty-four thousand five hundred sixty-seven"
+        );
         assert_eq!(ordinal(23), "twenty-third");
         assert_eq!(ordinal(40), "fortieth");
         assert_eq!(ordinal(112), "one hundred twelfth");
@@ -662,50 +764,107 @@ mod tests {
         assert_eq!(year(2026), "twenty twenty-six");
         assert_eq!(year(2005), "two thousand five");
         assert_eq!(year(1905), "nineteen oh five");
-        assert_eq!(n("I have 3 cats and 1,500 fish."), "I have three cats and one thousand five hundred fish.");
-        assert_eq!(n("It's 12.5 or -3 or 0.05."), "It's twelve point five or minus three or zero point zero five.");
-        assert_eq!(n("Call 4155550100 or 007."), "Call four one five five five five zero one zero zero or zero zero seven.");
-        assert_eq!(n("Version 3.10.2 is out."), "Version three point ten point two is out.");
+        assert_eq!(
+            n("I have 3 cats and 1,500 fish."),
+            "I have three cats and one thousand five hundred fish."
+        );
+        assert_eq!(
+            n("It's 12.5 or -3 or 0.05."),
+            "It's twelve point five or minus three or zero point zero five."
+        );
+        assert_eq!(
+            n("Call 4155550100 or 007."),
+            "Call four one five five five five zero one zero zero or zero zero seven."
+        );
+        assert_eq!(
+            n("Version 3.10.2 is out."),
+            "Version three point ten point two is out."
+        );
     }
 
     #[test]
     fn times() {
         assert_eq!(n("It is 3:45 PM."), "It is three forty-five P M.");
-        assert_eq!(n("At 3:05 p.m. we leave."), "At three oh five P M we leave.");
+        assert_eq!(
+            n("At 3:05 p.m. we leave."),
+            "At three oh five P M we leave."
+        );
         assert_eq!(n("Wake at 7am."), "Wake at seven A M.");
-        assert_eq!(n("By 9:00 or 15:30 or 18:00."), "By nine o'clock or fifteen thirty or eighteen hundred.");
+        assert_eq!(
+            n("By 9:00 or 15:30 or 18:00."),
+            "By nine o'clock or fifteen thirty or eighteen hundred."
+        );
         assert_eq!(n("Meet at 5 p.m. Then eat."), "Meet at five P M. Then eat.");
     }
 
     #[test]
     fn dates() {
-        assert_eq!(n("on Nov 23, 2026."), "on November twenty-third, twenty twenty-six.");
-        assert_eq!(n("on 2026-11-23."), "on November twenty-third, twenty twenty-six.");
+        assert_eq!(
+            n("on Nov 23, 2026."),
+            "on November twenty-third, twenty twenty-six."
+        );
+        assert_eq!(
+            n("on 2026-11-23."),
+            "on November twenty-third, twenty twenty-six."
+        );
         assert_eq!(n("on 23rd March"), "on the twenty-third of March");
         assert_eq!(n("Mon, Nov. 24"), "Monday, November twenty-fourth");
-        assert_eq!(n("since 1999 and in the 1990s and the '80s"), "since nineteen ninety-nine and in the nineteen nineties and the eighties");
-        assert_eq!(n("from 2020-2026"), "from twenty twenty to twenty twenty-six");
+        assert_eq!(
+            n("since 1999 and in the 1990s and the '80s"),
+            "since nineteen ninety-nine and in the nineteen nineties and the eighties"
+        );
+        assert_eq!(
+            n("from 2020-2026"),
+            "from twenty twenty to twenty twenty-six"
+        );
         assert_eq!(n("May 2026"), "May twenty twenty-six");
         assert_eq!(n("12/25/2026"), "December twenty-fifth, twenty twenty-six");
     }
 
     #[test]
     fn money_units_percent() {
-        assert_eq!(n("$5.99 and $1 and €20"), "five dollars and ninety-nine cents and one dollar and twenty euros");
-        assert_eq!(n("$1.5 million or $5K"), "one point five million dollars or five thousand dollars");
+        assert_eq!(
+            n("$5.99 and $1 and €20"),
+            "five dollars and ninety-nine cents and one dollar and twenty euros"
+        );
+        assert_eq!(
+            n("$1.5 million or $5K"),
+            "one point five million dollars or five thousand dollars"
+        );
         assert_eq!(n("£3.50"), "three pounds and fifty pence");
-        assert_eq!(n("about 40% of 12.5 GB"), "about forty percent of twelve point five gigabytes");
-        assert_eq!(n("1 km at 60 km/h, 3ms, 2x"), "one kilometer at sixty kilometers an hour, three milliseconds, two times");
-        assert_eq!(n("It's 21°C or 70 °F"), "It's twenty-one degrees Celsius or seventy degrees Fahrenheit");
-        assert_eq!(n("the 3rd of 1/2 and 3/4"), "the third of one half and three quarters");
-        assert_eq!(n("3-5 days, 10–20 min"), "three to five days, ten to twenty minutes");
+        assert_eq!(
+            n("about 40% of 12.5 GB"),
+            "about forty percent of twelve point five gigabytes"
+        );
+        assert_eq!(
+            n("1 km at 60 km/h, 3ms, 2x"),
+            "one kilometer at sixty kilometers an hour, three milliseconds, two times"
+        );
+        assert_eq!(
+            n("It's 21°C or 70 °F"),
+            "It's twenty-one degrees Celsius or seventy degrees Fahrenheit"
+        );
+        assert_eq!(
+            n("the 3rd of 1/2 and 3/4"),
+            "the third of one half and three quarters"
+        );
+        assert_eq!(
+            n("3-5 days, 10–20 min"),
+            "three to five days, ten to twenty minutes"
+        );
     }
 
     #[test]
     fn abbreviations_and_acronyms() {
-        assert_eq!(n("Dr. Smith vs. Mr. Jones, e.g. here, etc."), "Doctor Smith versus Mister Jones, for example here, and so on.");
+        assert_eq!(
+            n("Dr. Smith vs. Mr. Jones, e.g. here, etc."),
+            "Doctor Smith versus Mister Jones, for example here, and so on."
+        );
         assert_eq!(n("Your GPU uses the API."), "Your G P U uses the A P I.");
-        assert_eq!(n("NASA is OK. The US. IT works. VERY good."), "NASA is OK. The U S. I T works. VERY good.");
+        assert_eq!(
+            n("NASA is OK. The US. IT works. VERY good."),
+            "NASA is OK. The U S. I T works. VERY good."
+        );
         assert_eq!(n("GPUs and CPUs"), "G P U's and C P U's");
         assert_eq!(n("an MP3 in 4K"), "an M P three in four K");
     }
@@ -713,16 +872,40 @@ mod tests {
     #[test]
     fn respells_unknown_words() {
         let lex = Lexicon::from_words([
-            "kilo", "meters", "milly", "seconds", "terabytes", "five", "three", "two", "and",
-            "what", "that", "today", "weather", "should", "git", "hub", "on", "nvidia", "is",
-            "fire", "fox", "uses", "we", "go",
+            "kilo",
+            "meters",
+            "milly",
+            "seconds",
+            "terabytes",
+            "five",
+            "three",
+            "two",
+            "and",
+            "what",
+            "that",
+            "today",
+            "weather",
+            "should",
+            "git",
+            "hub",
+            "on",
+            "nvidia",
+            "is",
+            "fire",
+            "fox",
+            "uses",
+            "we",
+            "go",
         ]);
         assert_eq!(
             normalize("5 km and 3 ms, 2 TB", &lex),
             "five kilo meters and three milly seconds, two terabytes"
         );
         assert_eq!(
-            normalize("What's that? Today's weather. Should've. We'd go. GitHub is on.", &lex),
+            normalize(
+                "What's that? Today's weather. Should've. We'd go. GitHub is on.",
+                &lex
+            ),
             "What's that? Today's weather. Should have. We would go. Git Hub is on."
         );
         assert_eq!(normalize("Firefox uses", &lex), "Fire fox uses");
@@ -731,13 +914,25 @@ mod tests {
     #[test]
     fn urls_and_symbols() {
         assert_eq!(n("See https://vivus.org/docs/x?y=1."), "See vivus dot org.");
-        assert_eq!(n("Mail me@example.com or www.github.com"), "Mail me at example dot com or github dot com");
+        assert_eq!(
+            n("Mail me@example.com or www.github.com"),
+            "Mail me at example dot com or github dot com"
+        );
         assert_eq!(n("Edit config.toml"), "Edit config dot T O M L");
         assert_eq!(n("Open ~/notes.md"), "Open home slash notes dot M D");
-        assert_eq!(n("uses ~2 GB at -5°C"), "uses about two gigabytes at minus five degrees Celsius");
-        assert_eq!(n("He said \"hello\" (loudly) & left 😀."), "He said hello, loudly, and left.");
+        assert_eq!(
+            n("uses ~2 GB at -5°C"),
+            "uses about two gigabytes at minus five degrees Celsius"
+        );
+        assert_eq!(
+            n("He said \"hello\" (loudly) & left 😀."),
+            "He said hello, loudly, and left."
+        );
         assert_eq!(n("## Title"), "Title");
-        assert_eq!(n("C++ and/or Rust, w/ #1 fan"), "C plus plus and or Rust, with number one fan");
+        assert_eq!(
+            n("C++ and/or Rust, w/ #1 fan"),
+            "C plus plus and or Rust, with number one fan"
+        );
         assert_eq!(n("it’s fine"), "it's fine");
         assert_eq!(n("foo/bar"), "foo slash bar");
     }

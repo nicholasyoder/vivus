@@ -30,7 +30,11 @@ impl Recorder {
             tracing::warn!("couldn't write {}", wav.display());
             return;
         }
-        let line = format!("{name}\t{}\t{}\n", self.model, text.replace(['\t', '\n'], " "));
+        let line = format!(
+            "{name}\t{}\t{}\n",
+            self.model,
+            text.replace(['\t', '\n'], " ")
+        );
         let index = self.dir.join("transcripts.tsv");
         let result = std::fs::OpenOptions::new()
             .create(true)

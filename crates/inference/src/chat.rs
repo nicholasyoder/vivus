@@ -52,7 +52,10 @@ impl Serialize for Message {
         let v = match self {
             Message::System(c) => json!({"role": "system", "content": c}),
             Message::User(c) => json!({"role": "user", "content": c}),
-            Message::Assistant { content, tool_calls } => {
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => {
                 let mut v = json!({"role": "assistant", "content": content});
                 if !tool_calls.is_empty() {
                     v["tool_calls"] = tool_calls.iter().map(ToolCall::to_wire).collect();
@@ -400,9 +403,19 @@ mod tests {
         ]);
         assert_eq!(
             ev[0],
-            Event::ToolCallStart { index: 0, id: "a".into(), name: "speak".into() }
+            Event::ToolCallStart {
+                index: 0,
+                id: "a".into(),
+                name: "speak".into()
+            }
         );
-        assert_eq!(ev[1], Event::ToolCallArgs { index: 0, delta: "{\"text\":".into() });
+        assert_eq!(
+            ev[1],
+            Event::ToolCallArgs {
+                index: 0,
+                delta: "{\"text\":".into()
+            }
+        );
         let r = reply(&ev);
         assert_eq!(r.tool_calls.len(), 2);
         assert_eq!(r.tool_calls[0].arguments, "{\"text\":\"Hi\"}");
@@ -436,14 +449,29 @@ mod tests {
             json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"a\""}}]}}]}),
             json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"f","arguments":":1}"}}]}}]}),
         ]);
-        assert_eq!(ev[0], Event::ToolCallStart { index: 0, id: String::new(), name: "f".into() });
-        assert_eq!(ev[1], Event::ToolCallArgs { index: 0, delta: "{\"a\":1}".into() });
+        assert_eq!(
+            ev[0],
+            Event::ToolCallStart {
+                index: 0,
+                id: String::new(),
+                name: "f".into()
+            }
+        );
+        assert_eq!(
+            ev[1],
+            Event::ToolCallArgs {
+                index: 0,
+                delta: "{\"a\":1}".into()
+            }
+        );
         assert_eq!(reply(&ev).tool_calls[0].id, "call_0");
     }
 
     #[test]
     fn non_streaming_body_and_reasoning() {
-        let ev = run(&[json!({"choices":[{"message":{"role":"assistant","content":"Hello","reasoning_content":"hmm"},"finish_reason":"stop"}]})]);
+        let ev = run(&[
+            json!({"choices":[{"message":{"role":"assistant","content":"Hello","reasoning_content":"hmm"},"finish_reason":"stop"}]}),
+        ]);
         assert_eq!(ev[0], Event::Reasoning("hmm".into()));
         assert_eq!(ev[1], Event::Text("Hello".into()));
         assert_eq!(reply(&ev).finish_reason, Some(FinishReason::Stop));
@@ -451,19 +479,36 @@ mod tests {
 
     #[test]
     fn request_serialization() {
-        let call = ToolCall { id: "a".into(), name: "speak".into(), arguments: "{}".into() };
+        let call = ToolCall {
+            id: "a".into(),
+            name: "speak".into(),
+            arguments: "{}".into(),
+        };
         let mut req = ChatRequest::new(
             "m",
             vec![
                 Message::System("s".into()),
-                Message::Assistant { content: None, tool_calls: vec![call] },
-                Message::Tool { tool_call_id: "a".into(), content: "ok".into() },
+                Message::Assistant {
+                    content: None,
+                    tool_calls: vec![call],
+                },
+                Message::Tool {
+                    tool_call_id: "a".into(),
+                    content: "ok".into(),
+                },
             ],
         );
         let v = serde_json::to_value(&req).unwrap();
         assert!(v.get("tools").is_none());
-        assert_eq!(v["messages"][1]["tool_calls"][0]["function"]["name"], "speak");
-        req.tools.push(Tool { name: "t".into(), description: "d".into(), parameters: json!({"type":"object"}) });
+        assert_eq!(
+            v["messages"][1]["tool_calls"][0]["function"]["name"],
+            "speak"
+        );
+        req.tools.push(Tool {
+            name: "t".into(),
+            description: "d".into(),
+            parameters: json!({"type":"object"}),
+        });
         req.tool_choice = Some(ToolChoice::Function("t".into()));
         let v = serde_json::to_value(&req).unwrap();
         assert_eq!(v["tools"][0]["function"]["name"], "t");

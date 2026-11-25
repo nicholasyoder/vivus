@@ -38,7 +38,10 @@ async fn main() -> anyhow::Result<()> {
 
     let mut req = ChatRequest::new(
         model,
-        vec![Message::System(SYSTEM.into()), Message::User(args.join(" "))],
+        vec![
+            Message::System(SYSTEM.into()),
+            Message::User(args.join(" ")),
+        ],
     );
     req.tools.push(Tool {
         name: "show".into(),

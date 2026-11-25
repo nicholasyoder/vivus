@@ -16,7 +16,10 @@ fn main() {
         eprintln!("usage: tts_bench <model> [voice] [threads] [out.wav] [text]");
         std::process::exit(2);
     };
-    let voice = args.get(2).map(String::as_str).filter(|v| !v.is_empty() && *v != "-");
+    let voice = args
+        .get(2)
+        .map(String::as_str)
+        .filter(|v| !v.is_empty() && *v != "-");
     let threads = args.get(3).map_or(2, |t| t.parse().expect("threads"));
     let out = args.get(4).map_or("tts_bench.wav", String::as_str);
     let text = args.get(5).map_or(TEXT, String::as_str);
@@ -48,7 +51,11 @@ fn main() {
         let samples = synth.synthesize(s);
         let e = t.elapsed();
         let spoken = synth.normalize(s);
-        println!("  {:>5.0} ms for {:.1}s: {spoken}", e.as_secs_f64() * 1e3, samples.len() as f32 / rate as f32);
+        println!(
+            "  {:>5.0} ms for {:.1}s: {spoken}",
+            e.as_secs_f64() * 1e3,
+            samples.len() as f32 / rate as f32
+        );
         let ph = synth.phonemize(&spoken);
         println!("           /{}/", ph.phonemes);
         if !ph.missing.is_empty() {
@@ -61,10 +68,19 @@ fn main() {
     let audio_secs = audio.len() as f32 / rate as f32;
     sherpa_onnx::write(out, &audio, rate as i32);
 
-    println!("model {model}, {threads} threads, {} sentences, {audio_secs:.1}s audio at {rate} Hz", sentences.len());
+    println!(
+        "model {model}, {threads} threads, {} sentences, {audio_secs:.1}s audio at {rate} Hz",
+        sentences.len()
+    );
     println!("  load            {:>7.0} ms", load.as_secs_f64() * 1e3);
     println!("  warm-up         {:>7.0} ms", warmup.as_secs_f64() * 1e3);
-    println!("  first sentence  {:>7.0} ms", first.unwrap_or_default().as_secs_f64() * 1e3);
-    println!("  compute/audio   {:>7.3}  (<1 keeps up with playback)", compute.as_secs_f32() / audio_secs);
+    println!(
+        "  first sentence  {:>7.0} ms",
+        first.unwrap_or_default().as_secs_f64() * 1e3
+    );
+    println!(
+        "  compute/audio   {:>7.3}  (<1 keeps up with playback)",
+        compute.as_secs_f32() / audio_secs
+    );
     println!("  wrote {out}");
 }

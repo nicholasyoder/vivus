@@ -15,7 +15,13 @@ fn main() {
                 vivus_apps::launch(&apps, app, None).unwrap();
             }
         }
-        Match::Ambiguous(v) => println!("ambiguous: {:?}", v.iter().map(|a| &a.name).collect::<Vec<_>>()),
-        Match::NotFound(v) => println!("not found; nearest: {:?}", v.iter().map(|a| &a.name).collect::<Vec<_>>()),
+        Match::Ambiguous(v) => println!(
+            "ambiguous: {:?}",
+            v.iter().map(|a| &a.name).collect::<Vec<_>>()
+        ),
+        Match::NotFound(v) => println!(
+            "not found; nearest: {:?}",
+            v.iter().map(|a| &a.name).collect::<Vec<_>>()
+        ),
     }
 }

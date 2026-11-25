@@ -266,7 +266,9 @@ impl Listener {
 
 /// Not empty, not a filler or a stray letter (what a cough or breath decodes to).
 fn is_word(text: &str) -> bool {
-    const FILLERS: &[&str] = &["ah", "eh", "er", "hm", "hmm", "huh", "mhm", "mm", "uh", "um"];
+    const FILLERS: &[&str] = &[
+        "ah", "eh", "er", "hm", "hmm", "huh", "mhm", "mm", "uh", "um",
+    ];
     text.split(|c: char| !c.is_alphanumeric() && c != '\'')
         .filter(|w| !w.is_empty())
         .any(|w| {

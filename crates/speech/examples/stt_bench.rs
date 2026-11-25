@@ -47,8 +47,14 @@ fn main() {
 
     println!("model {model}, {threads} threads, {audio_secs:.1}s audio");
     println!("  load            {:>7.0} ms", load.as_secs_f64() * 1e3);
-    println!("  compute/audio   {:>7.3}  (<1 keeps up with live audio)", compute.as_secs_f32() / audio_secs);
-    println!("  worst chunk     {:>7.0} ms", worst_chunk.as_secs_f64() * 1e3);
+    println!(
+        "  compute/audio   {:>7.3}  (<1 keeps up with live audio)",
+        compute.as_secs_f32() / audio_secs
+    );
+    println!(
+        "  worst chunk     {:>7.0} ms",
+        worst_chunk.as_secs_f64() * 1e3
+    );
     println!("  final latency   {:>7.0} ms", finish.as_secs_f64() * 1e3);
     println!("  partials        {partials}");
     println!("  text: {text}");

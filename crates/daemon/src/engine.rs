@@ -166,7 +166,11 @@ impl Engine {
             }
             Command::Speech(event) => self.on_speech(event).await?,
             Command::Reply { generation, event } => {
-                if self.reply.as_ref().is_some_and(|r| r.generation == generation) {
+                if self
+                    .reply
+                    .as_ref()
+                    .is_some_and(|r| r.generation == generation)
+                {
                     self.on_reply(event).await?;
                 }
             }
@@ -263,7 +267,9 @@ impl Engine {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("router unavailable: {e:#}");
-                return self.say_only("I can't answer yet: no language model is set up.").await;
+                return self
+                    .say_only("I can't answer yet: no language model is set up.")
+                    .await;
             }
         };
         self.generation += 1;
@@ -328,7 +334,8 @@ impl Engine {
             }
             ReplyEvent::Done => {
                 let reply = self.reply.take().unwrap();
-                self.transcript("assistant", reply.text.trim(), true).await?;
+                self.transcript("assistant", reply.text.trim(), true)
+                    .await?;
                 match &self.speaker {
                     Some(speaker) if reply.speaking => speaker.end(),
                     _ => self.after_reply().await?,
@@ -396,7 +403,11 @@ impl Engine {
         }
         tracing::info!("state: {state}");
         let iface = self.assistant().await?;
-        iface.get().await.state_changed(iface.signal_emitter()).await
+        iface
+            .get()
+            .await
+            .state_changed(iface.signal_emitter())
+            .await
     }
 
     async fn transcript(&self, role: &str, text: &str, is_final: bool) -> zbus::Result<()> {

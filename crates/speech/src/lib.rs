@@ -14,7 +14,9 @@ pub mod tts;
 pub use arpabet::PhoneSet;
 pub use lexicon::{Lexicon, Phonemized, default_pronunciation_files, learned_pronunciation_file};
 pub use listener::{Event, Listener, Mode, VadOptions};
-pub use models::{SttKind, SttModel, TtsKind, TtsModel, default_models_dir, default_recordings_dir};
+pub use models::{
+    SttKind, SttModel, TtsKind, TtsModel, default_models_dir, default_recordings_dir,
+};
 pub use recorder::Recorder;
 pub use sentences::SentenceSplitter;
 pub use stt::SpeechRecognizer;

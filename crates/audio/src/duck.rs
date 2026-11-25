@@ -56,7 +56,9 @@ impl Ducker {
                     {
                         return;
                     }
-                    let Some(registry) = registry.upgrade() else { return };
+                    let Some(registry) = registry.upgrade() else {
+                        return;
+                    };
                     let node: Node = match registry.bind(global) {
                         Ok(n) => n,
                         Err(e) => return tracing::debug!("duck: bind node {}: {e}", global.id),
@@ -135,9 +137,15 @@ fn duck(stream: &mut Stream, soft: Vec<f32>, level: f32) {
 /// ours while ducked mean a new stream, or the user changed its volume
 /// (which resets soft): take them as its own and duck again.
 fn on_props(streams: &Streams, id: u32, pod: &Pod, ducked: bool, level: f32) {
-    let Some(soft) = parse_soft_volumes(pod) else { return };
-    let Ok(mut streams) = streams.try_borrow_mut() else { return };
-    let Some(stream) = streams.get_mut(&id) else { return };
+    let Some(soft) = parse_soft_volumes(pod) else {
+        return;
+    };
+    let Ok(mut streams) = streams.try_borrow_mut() else {
+        return;
+    };
+    let Some(stream) = streams.get_mut(&id) else {
+        return;
+    };
     let ours = stream.ducked_to.as_ref().is_some_and(|d| same(d, &soft));
     if ours || stream.soft.as_ref().is_some_and(|s| same(s, &soft)) {
         return;
@@ -154,10 +162,14 @@ fn same(a: &[f32], b: &[f32]) -> bool {
 
 /// `softVolumes` from a Props param, if it has any.
 fn parse_soft_volumes(pod: &Pod) -> Option<Vec<f32>> {
-    let (_, Value::Object(obj)) = PodDeserializer::deserialize_any_from(pod.as_bytes()).ok()? else {
+    let (_, Value::Object(obj)) = PodDeserializer::deserialize_any_from(pod.as_bytes()).ok()?
+    else {
         return None;
     };
-    let prop = obj.properties.iter().find(|p| p.key == spa::sys::SPA_PROP_softVolumes)?;
+    let prop = obj
+        .properties
+        .iter()
+        .find(|p| p.key == spa::sys::SPA_PROP_softVolumes)?;
     match &prop.value {
         Value::ValueArray(ValueArray::Float(v)) if !v.is_empty() => Some(v.clone()),
         _ => None,
@@ -178,5 +190,9 @@ fn set_soft_volumes(node: &Node, volumes: Vec<f32>) {
         .expect("serialize props")
         .0
         .into_inner();
-    node.set_param(ParamType::Props, 0, Pod::from_bytes(&bytes).expect("props pod"));
+    node.set_param(
+        ParamType::Props,
+        0,
+        Pod::from_bytes(&bytes).expect("props pod"),
+    );
 }

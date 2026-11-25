@@ -5,7 +5,11 @@ use vivus_speech::{
 };
 
 const WAV: &str = "sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8/test_wavs/0.wav";
-const MODELS: [&str; 3] = ["parakeet-tdt-110m", "parakeet-tdt-0.6b", "nemotron-streaming-0.6b"];
+const MODELS: [&str; 3] = [
+    "parakeet-tdt-110m",
+    "parakeet-tdt-0.6b",
+    "nemotron-streaming-0.6b",
+];
 
 /// The clip trimmed to its speech (cut to `secs` if given), then `pad` seconds
 /// of silence either side.
@@ -44,8 +48,14 @@ fn run_with(
 
 /// Lowercase words only, since not every model punctuates.
 fn words(text: &str) -> String {
-    let text: String = text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
-    text.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+    let text: String = text
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect();
+    text.to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn finals(events: &[Event]) -> Vec<&str> {
@@ -65,8 +75,15 @@ fn vad_mode_segments_and_transcribes() {
             eprintln!("skipping {model}: models not installed");
             continue;
         };
-        assert_eq!(events[..2], [Event::SpeechPossible, Event::SpeechStarted], "{model}");
-        assert!(events.iter().any(|e| matches!(e, Event::Partial(_))), "{model}: no partials");
+        assert_eq!(
+            events[..2],
+            [Event::SpeechPossible, Event::SpeechStarted],
+            "{model}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(e, Event::Partial(_))),
+            "{model}: no partials"
+        );
         let text = words(&finals(&events).join(" "));
         assert!(text.starts_with("well i dont wish"), "{model}: {text}");
         assert!(text.contains("portrait"), "{model}: {text}");

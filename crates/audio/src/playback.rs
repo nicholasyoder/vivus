@@ -216,7 +216,11 @@ fn run(
             let frames = match data.data() {
                 Some(bytes) => {
                     let max = bytes.len() / 4;
-                    let n = if requested > 0 { requested.min(max) } else { max };
+                    let n = if requested > 0 {
+                        requested.min(max)
+                    } else {
+                        max
+                    };
                     // Underruns between sentences play as silence.
                     for out in bytes[..n * 4].chunks_exact_mut(4) {
                         let s = match st.paused {

@@ -58,7 +58,10 @@ fn main() {
                 }
             })
             .collect();
-        println!("round {round} {}/100ms", if rms { "rms dB" } else { "peak" });
+        println!(
+            "round {round} {}/100ms",
+            if rms { "rms dB" } else { "peak" }
+        );
         println!("  : {}", peaks.join(" "));
     }
 }

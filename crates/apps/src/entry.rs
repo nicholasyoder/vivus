@@ -71,7 +71,13 @@ pub fn locales() -> Vec<String> {
 
 /// Parses a desktop file; `None` if it isn't a visible, runnable application
 /// for `desktops` (`XDG_CURRENT_DESKTOP`, split on `:`).
-pub fn parse(id: String, file: PathBuf, text: &str, locales: &[String], desktops: &[String]) -> Option<App> {
+pub fn parse(
+    id: String,
+    file: PathBuf,
+    text: &str,
+    locales: &[String],
+    desktops: &[String],
+) -> Option<App> {
     let g = group(text);
     let get = |k: &str| g.get(k).map(|v| unescape(v));
     let localized = |k: &str| {
@@ -279,9 +285,11 @@ mod tests {
 
     #[test]
     fn parses_localized_fields() {
-        let a = app("[Desktop Entry]\nType=Application\nName=Files\nName[de]=Dateien\n\
+        let a = app(
+            "[Desktop Entry]\nType=Application\nName=Files\nName[de]=Dateien\n\
                      Keywords=folder;manager\\;x;\nExec=nautilus --new-window %U\n\
-                     [Desktop Action new]\nName=Other\n")
+                     [Desktop Action new]\nName=Other\n",
+        )
         .unwrap();
         assert_eq!(a.name, "Dateien");
         assert_eq!(a.name_c.as_deref(), Some("Files"));
@@ -307,7 +315,15 @@ mod tests {
         a.exec = r#"sh -c "echo \"hi\" \$HOME" --name=%c %i %%u"#.into();
         assert_eq!(
             exec_args(&a),
-            ["sh", "-c", "echo \"hi\" $HOME", "--name=Pad", "--icon", "pad", "%u"]
+            [
+                "sh",
+                "-c",
+                "echo \"hi\" $HOME",
+                "--name=Pad",
+                "--icon",
+                "pad",
+                "%u"
+            ]
         );
         a.exec = r#"x "" a"#.into();
         assert_eq!(exec_args(&a), ["x", "", "a"]);

@@ -41,7 +41,10 @@ impl Voice {
             model,
             ..
         } = resolve_local(config, "stt", config.roles.stt.as_ref(), DEFAULT_STT_MODEL)?;
-        tracing::info!("stt: {model} ({threads} threads) from {}", models_dir.display());
+        tracing::info!(
+            "stt: {model} ({threads} threads) from {}",
+            models_dir.display()
+        );
 
         let rec = stt::create(
             &models_dir,
@@ -170,7 +173,10 @@ pub(crate) fn resolve_local(
             model: role.model.clone().unwrap_or_else(|| default_model.into()),
             voice: role.voice.clone(),
         }),
-        _ => bail!("{name} provider `{}`: only local-speech is implemented so far", role.provider),
+        _ => bail!(
+            "{name} provider `{}`: only local-speech is implemented so far",
+            role.provider
+        ),
     }
 }
 

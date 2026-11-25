@@ -171,12 +171,7 @@ fn run(
     let format = crate::mono_f32_format(SAMPLE_RATE);
     let mut params = [Pod::from_bytes(&format).expect("audio format pod")];
 
-    stream.connect(
-        spa::utils::Direction::Input,
-        None,
-        flags,
-        &mut params,
-    )?;
+    stream.connect(spa::utils::Direction::Input, None, flags, &mut params)?;
 
     let weak_loop = mainloop.downgrade();
     let ctl_stream = stream.clone();

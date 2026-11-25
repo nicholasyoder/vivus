@@ -31,7 +31,10 @@ impl StringField {
         let (value, complete) = partial_string(&self.args, &self.field)?;
         self.complete = complete;
         // Incomplete escapes are held back, so the decoded value only grows.
-        let new = value.get(self.emitted..).filter(|s| !s.is_empty())?.to_owned();
+        let new = value
+            .get(self.emitted..)
+            .filter(|s| !s.is_empty())?
+            .to_owned();
         self.emitted = value.len();
         Some(new)
     }
@@ -46,7 +49,10 @@ impl StringField {
 /// Returns the text so far and whether the string is closed; `None` if the
 /// field hasn't started (or isn't a string, or the JSON is malformed).
 pub fn partial_string(json: &str, field: &str) -> Option<(String, bool)> {
-    let mut s = Scanner { b: json.as_bytes(), i: 0 };
+    let mut s = Scanner {
+        b: json.as_bytes(),
+        i: 0,
+    };
     s.ws();
     s.eat(b'{')?;
     loop {
@@ -179,7 +185,10 @@ impl Scanner<'_> {
                 }
             }
             _ => {
-                while !matches!(self.peek()?, b',' | b'}' | b']' | b' ' | b'\n' | b'\r' | b'\t') {
+                while !matches!(
+                    self.peek()?,
+                    b',' | b'}' | b']' | b' ' | b'\n' | b'\r' | b'\t'
+                ) {
                     self.i += 1;
                 }
                 Some(())
@@ -196,11 +205,26 @@ mod tests {
     fn partial_values() {
         assert_eq!(partial_string(r#"{"te"#, "text"), None);
         assert_eq!(partial_string(r#"{"text": "#, "text"), None);
-        assert_eq!(partial_string(r#"{"text": "Hel"#, "text"), Some(("Hel".into(), false)));
-        assert_eq!(partial_string(r#"{"text": "a\"b\n"}"#, "text"), Some(("a\"b\n".into(), true)));
-        assert_eq!(partial_string(r#"{"text": "a\"#, "text"), Some(("a".into(), false)));
-        assert_eq!(partial_string(r#"{"text": "é😀"#, "text"), Some(("é😀".into(), false)));
-        assert_eq!(partial_string(r#"{"text": "\ud83d"#, "text"), Some(("".into(), false)));
+        assert_eq!(
+            partial_string(r#"{"text": "Hel"#, "text"),
+            Some(("Hel".into(), false))
+        );
+        assert_eq!(
+            partial_string(r#"{"text": "a\"b\n"}"#, "text"),
+            Some(("a\"b\n".into(), true))
+        );
+        assert_eq!(
+            partial_string(r#"{"text": "a\"#, "text"),
+            Some(("a".into(), false))
+        );
+        assert_eq!(
+            partial_string(r#"{"text": "é😀"#, "text"),
+            Some(("é😀".into(), false))
+        );
+        assert_eq!(
+            partial_string(r#"{"text": "\ud83d"#, "text"),
+            Some(("".into(), false))
+        );
         assert_eq!(partial_string(r#"{"text": 5}"#, "text"), None);
     }
 
@@ -213,9 +237,24 @@ mod tests {
     #[test]
     fn streaming_deltas() {
         let mut f = StringField::new("text");
-        let chunks = [r#"{"te"#, r#"xt":"It's "#, r#"3\"#, r#"u00b0 now."#, r#"" , "x": 1}"#];
+        let chunks = [
+            r#"{"te"#,
+            r#"xt":"It's "#,
+            r#"3\"#,
+            r#"u00b0 now."#,
+            r#"" , "x": 1}"#,
+        ];
         let got: Vec<_> = chunks.iter().map(|c| f.push(c)).collect();
-        assert_eq!(got, [None, Some("It's ".into()), Some("3".into()), Some("° now.".into()), None]);
+        assert_eq!(
+            got,
+            [
+                None,
+                Some("It's ".into()),
+                Some("3".into()),
+                Some("° now.".into()),
+                None
+            ]
+        );
         assert!(f.is_complete());
     }
 }

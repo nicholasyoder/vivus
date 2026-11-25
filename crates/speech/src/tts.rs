@@ -168,9 +168,15 @@ impl Synthesizer {
         if !missing.is_empty() {
             tracing::info!("tts: no pronunciation, skipped: {}", missing.join(", "));
         }
-        let phonemes: Vec<char> = phonemes.chars().filter(|c| self.tokens.contains(c)).collect();
+        let phonemes: Vec<char> = phonemes
+            .chars()
+            .filter(|c| self.tokens.contains(c))
+            .collect();
         // Punctuation alone would come out as a short noise.
-        if phonemes.iter().all(|c| c.is_whitespace() || c.is_ascii_punctuation() || "—…“”".contains(*c)) {
+        if phonemes
+            .iter()
+            .all(|c| c.is_whitespace() || c.is_ascii_punctuation() || "—…“”".contains(*c))
+        {
             return Vec::new();
         }
         let codepoints = phonemes.into_iter().map(|c| c as i32).collect();
@@ -227,12 +233,16 @@ mod tests {
     use super::*;
 
     fn rms_db(s: &[f32]) -> f32 {
-        20.0 * (s.iter().map(|x| x * x).sum::<f32>() / s.len() as f32).sqrt().log10()
+        20.0 * (s.iter().map(|x| x * x).sum::<f32>() / s.len() as f32)
+            .sqrt()
+            .log10()
     }
 
     #[test]
     fn level_reaches_target_and_ignores_silence() {
-        let tone: Vec<f32> = (0..24_000).map(|i| 0.05 * (i as f32 * 0.05).sin()).collect();
+        let tone: Vec<f32> = (0..24_000)
+            .map(|i| 0.05 * (i as f32 * 0.05).sin())
+            .collect();
         let mut samples = [vec![0.0; 24_000], tone].concat();
         level(&mut samples, 24_000);
         assert!((rms_db(&samples[24_000..]) - TARGET_RMS_DB).abs() < 0.5);
@@ -241,8 +251,9 @@ mod tests {
 
     #[test]
     fn level_never_clips() {
-        let mut samples: Vec<f32> =
-            (0..24_000).map(|i| if i % 100 == 0 { 0.9 } else { 0.01 }).collect();
+        let mut samples: Vec<f32> = (0..24_000)
+            .map(|i| if i % 100 == 0 { 0.9 } else { 0.01 })
+            .collect();
         level(&mut samples, 24_000);
         assert!(samples.iter().all(|s| s.abs() < 1.0));
     }

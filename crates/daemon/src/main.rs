@@ -35,7 +35,10 @@ async fn main() -> anyhow::Result<()> {
 
     let conn = zbus::connection::Builder::session()?
         .name(vivus_dbus::SERVICE)?
-        .serve_at(vivus_dbus::PATH, service::Assistant::new(tx.clone(), shared.clone()))?
+        .serve_at(
+            vivus_dbus::PATH,
+            service::Assistant::new(tx.clone(), shared.clone()),
+        )?
         .serve_at(vivus_dbus::PATH, service::Documents::new(shared.clone()))?
         .build()
         .await

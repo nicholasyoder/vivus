@@ -86,8 +86,14 @@ const AGENT_FILLERS: &[&str] = &["On it.", "Working on it.", "Sure, give me a mo
 
 /// A role the router can hand a request to.
 pub enum Backend {
-    Chat { client: Client, model: String },
-    ClaudeCode { cc: ClaudeCode, model: Option<String> },
+    Chat {
+        client: Client,
+        model: String,
+    },
+    ClaudeCode {
+        cc: ClaudeCode,
+        model: Option<String>,
+    },
 }
 
 impl Backend {
@@ -192,7 +198,14 @@ impl Router {
         };
         let messages = vec![Message::System(SYSTEM.into()), Message::User(text.into())];
         let result = match self
-            .converse(&self.client, &self.model, messages, tools(), Some(MAX_TOKENS), &mut turn)
+            .converse(
+                &self.client,
+                &self.model,
+                messages,
+                tools(),
+                Some(MAX_TOKENS),
+                &mut turn,
+            )
             .await
         {
             Ok(Some(esc)) => self.escalate(text, esc, &mut turn).await,
@@ -426,7 +439,9 @@ impl Turn<'_> {
         let (first, rest) = text.split_once("\n\n").unwrap_or((text, ""));
         let first = first.trim();
         let markdown_first = first.starts_with(['#', '-', '*', '`', '|', '>'])
-            || first.split_once(". ").is_some_and(|(n, _)| n.parse::<u32>().is_ok());
+            || first
+                .split_once(". ")
+                .is_some_and(|(n, _)| n.parse::<u32>().is_ok());
         // Ignored the format: show it all and let the caller's fallback speak.
         let (spoken, detail) = if markdown_first || first.len() > 400 {
             ("", text)
@@ -480,7 +495,10 @@ impl Turn<'_> {
         let doc = {
             let mut shared = self.shared.lock().unwrap();
             let docs = &mut shared.documents;
-            let existing = args.document_id.as_deref().filter(|id| docs.get(id).is_some());
+            let existing = args
+                .document_id
+                .as_deref()
+                .filter(|id| docs.get(id).is_some());
             let doc = match existing {
                 Some(id) if args.append => docs.append(id, &format!("\n\n{}", args.markdown)),
                 Some(id) => docs.replace(id, args.markdown),
@@ -504,7 +522,10 @@ impl Turn<'_> {
 /// The first heading or line, for documents the model didn't title.
 fn title_from(markdown: &str) -> String {
     heading(markdown).unwrap_or_else(|| {
-        let line = markdown.lines().find(|l| !l.trim().is_empty()).unwrap_or("Document");
+        let line = markdown
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("Document");
         short_title(line)
     })
 }
@@ -638,7 +659,9 @@ mod tests {
 
     async fn respond(router: &Router, shared: &Mutex<Shared>) -> Vec<ReplyEvent> {
         let events = Mutex::new(Vec::new());
-        router.respond("hi", shared, |e| events.lock().unwrap().push(e)).await;
+        router
+            .respond("hi", shared, |e| events.lock().unwrap().push(e))
+            .await;
         events.into_inner().unwrap()
     }
 
@@ -671,7 +694,10 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        assert_eq!((doc.title.as_str(), doc.markdown.as_str()), ("List", "- a\n- b"));
+        assert_eq!(
+            (doc.title.as_str(), doc.markdown.as_str()),
+            ("List", "- a\n- b")
+        );
         assert_eq!(events.last(), Some(&ReplyEvent::Done));
         // Spoken and shown: no follow-up call.
         assert_eq!(requests.lock().unwrap().len(), 1);
@@ -689,7 +715,10 @@ mod tests {
         let events = respond(&router, &shared).await;
 
         assert_eq!(spoken(&events), "It's in the sidebar.");
-        assert_eq!(shared.lock().unwrap().documents.get("doc-1").unwrap().title, "Packing");
+        assert_eq!(
+            shared.lock().unwrap().documents.get("doc-1").unwrap().title,
+            "Packing"
+        );
         let requests = requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
         assert!(requests[1].contains("\"role\":\"tool\""));
@@ -744,7 +773,12 @@ mod tests {
         assert_eq!(requests.len(), 2);
         let second: serde_json::Value = serde_json::from_str(&requests[1]).unwrap();
         assert_eq!(second["model"], "big");
-        assert!(second["messages"][1]["content"].as_str().unwrap().contains("Task: AI news"));
+        assert!(
+            second["messages"][1]["content"]
+                .as_str()
+                .unwrap()
+                .contains("Task: AI news")
+        );
         let tools: Vec<_> = second["tools"]
             .as_array()
             .unwrap()
@@ -758,7 +792,10 @@ mod tests {
     #[tokio::test]
     async fn spoken_filler_is_not_doubled() {
         let (mut router, _) = serve(vec![
-            vec![text("Let me check."), call("escalate", json!({"role":"agent","task":"t"}))],
+            vec![
+                text("Let me check."),
+                call("escalate", json!({"role":"agent","task":"t"})),
+            ],
             vec![call("show", json!({"markdown":"# Result\n- x"}))],
             vec![text("It's in the sidebar.")],
         ])
@@ -784,7 +821,10 @@ mod tests {
         .await;
         let shared = Mutex::new(Shared::default());
         let events = respond(&router, &shared).await;
-        assert_eq!(spoken(&events), "Sorry, I can't do that yet: no model is set up for it.");
+        assert_eq!(
+            spoken(&events),
+            "Sorry, I can't do that yet: no model is set up for it."
+        );
         assert_eq!(requests.lock().unwrap().len(), 1);
     }
 
@@ -799,7 +839,11 @@ mod tests {
         let path = std::env::temp_dir().join(format!("vivus-router-claude-{}", std::process::id()));
         let result = json!({"type":"result","subtype":"success","is_error":false,
             "result":"X is a thing.\n\n## About X\n- [source](https://x.example)"});
-        std::fs::write(&path, format!("#!/bin/sh\ncat >/dev/null\necho '{result}'\n")).unwrap();
+        std::fs::write(
+            &path,
+            format!("#!/bin/sh\ncat >/dev/null\necho '{result}'\n"),
+        )
+        .unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         router.agent = Some(Backend::ClaudeCode {
             cc: ClaudeCode::new(path.to_str().unwrap(), vec![]),
@@ -811,7 +855,9 @@ mod tests {
 
         assert_eq!(spoken(&events), "On it. X is a thing.");
         // The filler is flushed to TTS before the agent runs.
-        let filler = events.iter().position(|e| *e == ReplyEvent::Text("On it.".into()));
+        let filler = events
+            .iter()
+            .position(|e| *e == ReplyEvent::Text("On it.".into()));
         assert_eq!(events.get(filler.unwrap() + 1), Some(&ReplyEvent::Flush));
         let shared = shared.lock().unwrap();
         let doc = shared.documents.get("doc-1").unwrap();

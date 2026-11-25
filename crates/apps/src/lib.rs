@@ -53,19 +53,26 @@ impl Apps {
             collect(&root, &mut files);
             files.sort();
             for file in files {
-                let Ok(rel) = file.strip_prefix(&root) else { continue };
+                let Ok(rel) = file.strip_prefix(&root) else {
+                    continue;
+                };
                 let id = rel.to_string_lossy().replace('/', "-");
                 // A shadowed ID stays hidden even if the winning file isn't shown.
                 if !seen.insert(id.clone()) {
                     continue;
                 }
-                let Ok(text) = std::fs::read_to_string(&file) else { continue };
+                let Ok(text) = std::fs::read_to_string(&file) else {
+                    continue;
+                };
                 if let Some(app) = entry::parse(id, file, &text, locales, desktops) {
                     apps.push(app);
                 }
             }
         }
-        Self { apps, mimeapps: Vec::new() }
+        Self {
+            apps,
+            mimeapps: Vec::new(),
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &App> {
@@ -80,7 +87,9 @@ impl Apps {
     /// that declares it.
     pub fn default_for(&self, mime: &str) -> Option<&App> {
         for file in &self.mimeapps {
-            let Ok(text) = std::fs::read_to_string(file) else { continue };
+            let Ok(text) = std::fs::read_to_string(file) else {
+                continue;
+            };
             let mut in_defaults = false;
             for line in text.lines().map(str::trim) {
                 if line.starts_with('[') {
@@ -94,16 +103,22 @@ impl Apps {
                 }
             }
         }
-        self.apps.iter().find(|a| a.mime_types.iter().any(|m| m == mime))
+        self.apps
+            .iter()
+            .find(|a| a.mime_types.iter().any(|m| m == mime))
     }
 
     fn with_category(&self, category: &str) -> Option<&App> {
-        self.apps.iter().find(|a| a.categories.iter().any(|c| c == category))
+        self.apps
+            .iter()
+            .find(|a| a.categories.iter().any(|c| c == category))
     }
 }
 
 fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -114,7 +129,12 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn xdg_dirs(home_var: &str, home_default: &str, dirs_var: &str, dirs_default: &str) -> Vec<PathBuf> {
+fn xdg_dirs(
+    home_var: &str,
+    home_default: &str,
+    dirs_var: &str,
+    dirs_default: &str,
+) -> Vec<PathBuf> {
     let home = std::env::var_os(home_var)
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
@@ -129,7 +149,12 @@ fn xdg_dirs(home_var: &str, home_default: &str, dirs_var: &str, dirs_default: &s
 }
 
 fn data_dirs() -> Vec<PathBuf> {
-    xdg_dirs("XDG_DATA_HOME", ".local/share", "XDG_DATA_DIRS", "/usr/local/share:/usr/share")
+    xdg_dirs(
+        "XDG_DATA_HOME",
+        ".local/share",
+        "XDG_DATA_DIRS",
+        "/usr/local/share:/usr/share",
+    )
 }
 
 fn config_dirs() -> Vec<PathBuf> {

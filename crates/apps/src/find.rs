@@ -15,8 +15,19 @@ pub enum Match<'a> {
 
 /// Words that say nothing about which app.
 const FILLER: &[&str] = &[
-    "a", "an", "the", "my", "app", "application", "program", "open", "launch", "start", "run",
-    "please", "up",
+    "a",
+    "an",
+    "the",
+    "my",
+    "app",
+    "application",
+    "program",
+    "open",
+    "launch",
+    "start",
+    "run",
+    "please",
+    "up",
 ];
 
 enum Handler {
@@ -29,25 +40,50 @@ use Handler::{Category, Mime};
 const GENERIC: &[(&[&str], &[Handler])] = &[
     (
         &["browser", "webbrowser", "internet", "internetbrowser"],
-        &[Mime("x-scheme-handler/https"), Mime("text/html"), Category("WebBrowser")],
+        &[
+            Mime("x-scheme-handler/https"),
+            Mime("text/html"),
+            Category("WebBrowser"),
+        ],
     ),
     (
-        &["filemanager", "files", "filebrowser", "fileexplorer", "explorer"],
+        &[
+            "filemanager",
+            "files",
+            "filebrowser",
+            "fileexplorer",
+            "explorer",
+        ],
         &[Mime("inode/directory"), Category("FileManager")],
     ),
-    (&["terminal", "console", "terminalemulator"], &[Category("TerminalEmulator")]),
-    (&["texteditor", "editor", "notepad"], &[Mime("text/plain"), Category("TextEditor")]),
+    (
+        &["terminal", "console", "terminalemulator"],
+        &[Category("TerminalEmulator")],
+    ),
+    (
+        &["texteditor", "editor", "notepad"],
+        &[Mime("text/plain"), Category("TextEditor")],
+    ),
     (
         &["email", "mail", "emailclient", "mailclient"],
         &[Mime("x-scheme-handler/mailto"), Category("Email")],
     ),
-    (&["musicplayer", "music", "audioplayer"], &[Mime("audio/mpeg"), Mime("audio/flac")]),
-    (&["videoplayer", "mediaplayer", "video", "videos"], &[Mime("video/mp4")]),
+    (
+        &["musicplayer", "music", "audioplayer"],
+        &[Mime("audio/mpeg"), Mime("audio/flac")],
+    ),
+    (
+        &["videoplayer", "mediaplayer", "video", "videos"],
+        &[Mime("video/mp4")],
+    ),
     (
         &["imageviewer", "photoviewer", "photos", "pictures", "images"],
         &[Mime("image/png"), Mime("image/jpeg")],
     ),
-    (&["pdfviewer", "pdfreader", "documentviewer"], &[Mime("application/pdf")]),
+    (
+        &["pdfviewer", "pdfreader", "documentviewer"],
+        &[Mime("application/pdf")],
+    ),
     (&["calculator"], &[Category("Calculator")]),
 ];
 
@@ -81,7 +117,9 @@ impl Apps {
         scored.sort_by(|a, b| b.0.total_cmp(&a.0));
         let best = scored.first().map_or(0.0, |s| s.0);
         if best < 0.95
-            && let Some((_, handlers)) = GENERIC.iter().find(|(names, _)| names.contains(&compact.as_str()))
+            && let Some((_, handlers)) = GENERIC
+                .iter()
+                .find(|(names, _)| names.contains(&compact.as_str()))
             && let Some(app) = handlers.iter().find_map(|h| match h {
                 Mime(m) => self.default_for(m),
                 Category(c) => self.with_category(c),
@@ -172,7 +210,11 @@ fn similarity(a: &str, b: &str) -> f32 {
         row[0] = i + 1;
         for (j, cb) in b.iter().enumerate() {
             let cur = row[j + 1];
-            row[j + 1] = if ca == cb { prev } else { 1 + prev.min(cur).min(row[j]) };
+            row[j + 1] = if ca == cb {
+                prev
+            } else {
+                1 + prev.min(cur).min(row[j])
+            };
             prev = cur;
         }
     }
@@ -195,15 +237,51 @@ mod tests {
     fn apps() -> Apps {
         Apps {
             apps: vec![
-                app("firefox.desktop", "Firefox", "GenericName=Web Browser\nExec=firefox %u\nCategories=Network;WebBrowser;\nMimeType=text/html;x-scheme-handler/https;"),
-                app("brave-browser.desktop", "Brave Web Browser", "Exec=/usr/bin/brave-browser-stable %U\nCategories=Network;WebBrowser;"),
-                app("org.gnome.Nautilus.desktop", "Files", "Exec=nautilus --new-window %U\nMimeType=inode/directory;"),
-                app("libreoffice-writer.desktop", "LibreOffice Writer", "Exec=libreoffice --writer %U"),
-                app("libreoffice-calc.desktop", "LibreOffice Calc", "Exec=libreoffice --calc %U"),
-                app("org.pulseaudio.pavucontrol.desktop", "Volume Control", "GenericName=Volume Control\nExec=pavucontrol"),
-                app("com.microsoft.VSCode.desktop", "Visual Studio Code", "Exec=env FOO=1 /usr/share/code/code %F\nKeywords=vscode;"),
-                app("gimp.desktop", "GNU Image Manipulation Program", "Exec=gimp %U"),
-                app("qterminal.desktop", "QTerminal", "Exec=qterminal\nCategories=System;TerminalEmulator;"),
+                app(
+                    "firefox.desktop",
+                    "Firefox",
+                    "GenericName=Web Browser\nExec=firefox %u\nCategories=Network;WebBrowser;\nMimeType=text/html;x-scheme-handler/https;",
+                ),
+                app(
+                    "brave-browser.desktop",
+                    "Brave Web Browser",
+                    "Exec=/usr/bin/brave-browser-stable %U\nCategories=Network;WebBrowser;",
+                ),
+                app(
+                    "org.gnome.Nautilus.desktop",
+                    "Files",
+                    "Exec=nautilus --new-window %U\nMimeType=inode/directory;",
+                ),
+                app(
+                    "libreoffice-writer.desktop",
+                    "LibreOffice Writer",
+                    "Exec=libreoffice --writer %U",
+                ),
+                app(
+                    "libreoffice-calc.desktop",
+                    "LibreOffice Calc",
+                    "Exec=libreoffice --calc %U",
+                ),
+                app(
+                    "org.pulseaudio.pavucontrol.desktop",
+                    "Volume Control",
+                    "GenericName=Volume Control\nExec=pavucontrol",
+                ),
+                app(
+                    "com.microsoft.VSCode.desktop",
+                    "Visual Studio Code",
+                    "Exec=env FOO=1 /usr/share/code/code %F\nKeywords=vscode;",
+                ),
+                app(
+                    "gimp.desktop",
+                    "GNU Image Manipulation Program",
+                    "Exec=gimp %U",
+                ),
+                app(
+                    "qterminal.desktop",
+                    "QTerminal",
+                    "Exec=qterminal\nCategories=System;TerminalEmulator;",
+                ),
             ],
             mimeapps: Vec::new(),
         }

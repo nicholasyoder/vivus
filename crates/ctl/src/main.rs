@@ -46,8 +46,12 @@ async fn main() -> anyhow::Result<()> {
 
     let result = match cli.command {
         Cmd::ToggleListen => proxy.toggle_listen().await,
-        Cmd::PushToTalk { action: PttAction::Start } => proxy.start_listening().await,
-        Cmd::PushToTalk { action: PttAction::Stop } => proxy.stop_listening().await,
+        Cmd::PushToTalk {
+            action: PttAction::Start,
+        } => proxy.start_listening().await,
+        Cmd::PushToTalk {
+            action: PttAction::Stop,
+        } => proxy.stop_listening().await,
         Cmd::Ask { text } => proxy.ask(&text.join(" ")).await,
         Cmd::Cancel => proxy.cancel().await,
         Cmd::Quit => proxy.quit().await,

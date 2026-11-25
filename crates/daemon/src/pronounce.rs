@@ -73,7 +73,10 @@ impl Pronouncer {
         let build = || -> anyhow::Result<(Client, String)> {
             let role = config.roles.router.as_ref().context("no [roles.router]")?;
             let model = role.model.clone().context("[roles.router] has no model")?;
-            Ok((Client::from_provider(&config.providers[&role.provider])?, model))
+            Ok((
+                Client::from_provider(&config.providers[&role.provider])?,
+                model,
+            ))
         };
         match build() {
             Ok((client, model)) => Some(Self::spawn(
@@ -111,7 +114,11 @@ impl Pronouncer {
             lexicon: lexicon.clone(),
         };
         rt.spawn(task.run(rx));
-        Self { tx, shared, lexicon }
+        Self {
+            tx,
+            shared,
+            lexicon,
+        }
     }
 
     /// Looks up `words` (as reported missing by the lexicon). `urgent` words are
@@ -119,7 +126,11 @@ impl Pronouncer {
     pub fn request(&self, words: &[String], urgent: bool) {
         let words: Vec<String> = {
             let lexicon = self.lexicon.read().unwrap();
-            words.iter().flat_map(|w| lookup_words(w)).filter(|w| !lexicon.contains(w)).collect()
+            words
+                .iter()
+                .flat_map(|w| lookup_words(w))
+                .filter(|w| !lexicon.contains(w))
+                .collect()
         };
         let mut batch = Vec::new();
         let mut state = self.shared.state.lock().unwrap();
@@ -138,15 +149,21 @@ impl Pronouncer {
         }
         drop(state);
         if !batch.is_empty() {
-            let _ = self.tx.send(Job { words: batch, urgent });
+            let _ = self.tx.send(Job {
+                words: batch,
+                urgent,
+            });
         }
     }
 
     /// Blocks until none of `words` is pending, `deadline` passes, or
     /// `cancelled` returns true. Returns whether anything was waited for.
     pub fn wait(&self, words: &[String], deadline: Instant, cancelled: impl Fn() -> bool) -> bool {
-        let keys: Vec<String> =
-            words.iter().flat_map(|w| lookup_words(w)).map(|w| w.to_lowercase()).collect();
+        let keys: Vec<String> = words
+            .iter()
+            .flat_map(|w| lookup_words(w))
+            .map(|w| w.to_lowercase())
+            .collect();
         let mut state = self.shared.state.lock().unwrap();
         let mut waited = false;
         while keys.iter().any(|k| state.pending.contains_key(k)) {
@@ -170,7 +187,8 @@ fn lookup_words(word: &str) -> Vec<String> {
     word.split('-')
         .filter(|w| {
             (2..=40).contains(&w.chars().count())
-                && w.chars().all(|c| c.is_alphabetic() || c == '\'' || c == '’')
+                && w.chars()
+                    .all(|c| c.is_alphabetic() || c == '\'' || c == '’')
         })
         .map(str::to_owned)
         .collect()
@@ -225,7 +243,10 @@ impl Task {
         // A prefetched word may have been answered by an urgent request since.
         let words: Vec<String> = {
             let state = self.shared.state.lock().unwrap();
-            words.into_iter().filter(|w| state.pending.contains_key(&w.to_lowercase())).collect()
+            words
+                .into_iter()
+                .filter(|w| state.pending.contains_key(&w.to_lowercase()))
+                .collect()
         };
         if words.is_empty() {
             return;
@@ -243,7 +264,10 @@ impl Task {
         let answers = match result {
             Ok(a) => a,
             Err(e) => {
-                tracing::warn!("pronunciation lookup failed for {}: {e:#}", words.join(", "));
+                tracing::warn!(
+                    "pronunciation lookup failed for {}: {e:#}",
+                    words.join(", ")
+                );
                 HashMap::new()
             }
         };
@@ -263,7 +287,11 @@ impl Task {
         tracing::info!(
             "pronunciations in {:.2} s: {}",
             start.elapsed().as_secs_f64(),
-            if learned.is_empty() { "none".into() } else { learned.join(", ") }
+            if learned.is_empty() {
+                "none".into()
+            } else {
+                learned.join(", ")
+            }
         );
         if let (Some(path), false) = (&self.learned, learned.is_empty())
             && let Err(e) = append(path, &learned)
@@ -288,7 +316,10 @@ async fn ask(
 ) -> anyhow::Result<HashMap<String, String>> {
     let mut req = ChatRequest::new(
         model,
-        vec![Message::System(SYSTEM.into()), Message::User(words.join("\n"))],
+        vec![
+            Message::System(SYSTEM.into()),
+            Message::User(words.join("\n")),
+        ],
     );
     req.temperature = Some(0.0);
     req.max_tokens = Some(MAX_TOKENS);
@@ -296,7 +327,10 @@ async fn ask(
     let reply = client.complete(&req).await?;
     parse_answer(&reply.content).with_context(|| {
         let (finish, usage) = (&reply.finish_reason, &reply.usage);
-        format!("unexpected reply ({finish:?}, {usage:?}): {}", reply.content)
+        format!(
+            "unexpected reply ({finish:?}, {usage:?}): {}",
+            reply.content
+        )
     })
 }
 
@@ -315,7 +349,10 @@ fn append(path: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
     for line in lines {
         writeln!(f, "{line}")?;
     }
@@ -324,7 +361,10 @@ fn append(path: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
 
 /// Names of installed applications, for idle prefetch.
 pub fn app_names() -> Vec<String> {
-    let mut names: Vec<String> = vivus_apps::Apps::load().iter().map(|a| a.name.clone()).collect();
+    let mut names: Vec<String> = vivus_apps::Apps::load()
+        .iter()
+        .map(|a| a.name.clone())
+        .collect();
     names.sort();
     names.dedup();
     names
@@ -356,7 +396,9 @@ mod tests {
         let (tx, mut rx) = unbounded_channel();
         let p = Pronouncer {
             tx,
-            lexicon: Arc::new(std::sync::RwLock::new(vivus_speech::Lexicon::from_words(["known"]))),
+            lexicon: Arc::new(std::sync::RwLock::new(vivus_speech::Lexicon::from_words([
+                "known",
+            ]))),
             shared: Arc::new(Shared {
                 state: Mutex::new(State::default()),
                 answered: Condvar::new(),
@@ -387,16 +429,29 @@ mod tests {
         let config = Config::load(&Config::default_path().unwrap()).unwrap();
         let role = config.roles.router.as_ref().unwrap();
         let client = Client::from_provider(&config.providers[&role.provider]).unwrap();
-        let words: Vec<String> =
-            ["Hyprland", "nginx", "Kubernetes", "Spotify", "LibreOffice", "Wayland", "sway"]
-                .map(String::from)
-                .into();
+        let words: Vec<String> = [
+            "Hyprland",
+            "nginx",
+            "Kubernetes",
+            "Spotify",
+            "LibreOffice",
+            "Wayland",
+            "sway",
+        ]
+        .map(String::from)
+        .into();
         let t = Instant::now();
-        let answers = ask(&client, role.model.as_ref().unwrap(), &words, true).await.unwrap();
+        let answers = ask(&client, role.model.as_ref().unwrap(), &words, true)
+            .await
+            .unwrap();
         println!("{:.2} s", t.elapsed().as_secs_f64());
         for w in &words {
             println!("{w}: {:?}", answers.get(&w.to_lowercase()));
         }
-        assert!(words.iter().all(|w| answers.contains_key(&w.to_lowercase())));
+        assert!(
+            words
+                .iter()
+                .all(|w| answers.contains_key(&w.to_lowercase()))
+        );
     }
 }
