@@ -20,7 +20,7 @@ fn read_tokens(path: &str) -> std::io::Result<HashSet<char>> {
     Ok(text
         .lines()
         .filter_map(|line| match line.rsplit_once(' ') {
-            Some((sym, _)) if sym.is_empty() => Some(' '),
+            Some(("", _)) => Some(' '),
             Some((sym, _)) => {
                 let mut c = sym.chars();
                 c.next().filter(|_| c.next().is_none())

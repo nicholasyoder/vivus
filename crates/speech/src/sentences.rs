@@ -58,18 +58,21 @@ impl SentenceSplitter {
                         j += 1;
                     }
                     match b.get(j) {
-                        Some(next) if next.is_ascii_whitespace() => {
-                            if c != '.' || !self.is_abbreviation(i) {
-                                return Some(j);
-                            }
+                        Some(next)
+                            if next.is_ascii_whitespace()
+                                && (c != '.' || !self.is_abbreviation(i)) =>
+                        {
+                            return Some(j);
                         }
                         _ => {}
                     }
                 }
-                ',' | ';' | ':' if i >= SOFT_LIMIT && soft.is_none() => {
-                    if b.get(i + 1).is_some_and(|n| n.is_ascii_whitespace()) {
-                        soft = Some(i + 1);
-                    }
+                ',' | ';' | ':'
+                    if i >= SOFT_LIMIT
+                        && soft.is_none()
+                        && b.get(i + 1).is_some_and(|n| n.is_ascii_whitespace()) =>
+                {
+                    soft = Some(i + 1);
                 }
                 _ => {}
             }
