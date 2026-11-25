@@ -53,7 +53,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] Audio device listing and hotplug from the PipeWire registry; switch input without restarting the daemon (2026-11-24, `fe8d56c`) — [settings.md](settings.md#audio-devices)
 - [x] Settings window (its own toplevel): input/output device pickers, mic level meter with a clip indicator, end-of-turn silence, speech volume, duck volume; all applied live (2026-11-24, `e4be0e9`) — [settings.md](settings.md#settings-window)
 - [x] Mic gain slider in Settings (the input's PipeWire volume, saved by WirePlumber; follows other apps' changes); level meter turns red when it clips (2026-11-24, `28ea698`) — [settings.md](settings.md#input-gain)
-- [x] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice; STT/TTS changes reload live (2026-11-25, `HASH`) — [settings.md](settings.md#roles-and-providers)
+- [x] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice; STT/TTS changes reload live (2026-11-25, `e56a4a3`) — [settings.md](settings.md#roles-and-providers)
 
 ### 1e: Smarter answers
 
