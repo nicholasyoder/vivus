@@ -153,6 +153,16 @@ impl Settings {
         self.edit(path, None).await
     }
 
+    async fn list_audio_devices(&self) -> Vec<vivus_dbus::AudioDevice> {
+        self.shared.lock().unwrap().audio_devices.clone()
+    }
+
     #[zbus(signal)]
     pub async fn changed(emitter: &SignalEmitter<'_>, paths: &[String]) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    pub async fn audio_devices_changed(
+        emitter: &SignalEmitter<'_>,
+        devices: &[vivus_dbus::AudioDevice],
+    ) -> zbus::Result<()>;
 }

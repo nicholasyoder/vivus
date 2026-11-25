@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use anyhow::{Context, bail};
 use tokio::sync::mpsc::UnboundedSender;
 use vivus_audio::{Capture, CaptureOptions, EchoCancelOptions};
-use vivus_core::config::{Config, Provider, Role};
+use vivus_core::config::{Audio, Config, Provider, Role};
 use vivus_speech::{Listener, Mode, Recorder, VadOptions, stt};
 
 use crate::engine::Command;
@@ -23,7 +23,10 @@ enum Msg {
 
 pub struct Voice {
     tx: mpsc::Sender<Msg>,
-    capture: Capture,
+    /// `None` if reopening the mic after a device change failed.
+    capture: Option<Capture>,
+    /// Whether the mic should be delivering audio, to restore after a reconnect.
+    active: bool,
 }
 
 impl std::fmt::Debug for Voice {
@@ -96,44 +99,71 @@ impl Voice {
             })
             .context("spawning speech thread")?;
 
-        let audio_tx = tx.clone();
-        let capture = Capture::spawn(
-            CaptureOptions {
-                target: config.audio.input.clone(),
-                echo_cancel: config.audio.echo_cancel.then(|| EchoCancelOptions {
-                    reference: config.audio.output.clone(),
-                }),
-                keep_open: config.audio.keep_mic_open,
-            },
-            move |samples| {
-                let _ = audio_tx.send(Msg::Audio(samples));
-            },
-        )?;
-
-        Ok(Self { tx, capture })
+        let capture = spawn_capture(&config.audio, tx.clone())?;
+        Ok(Self {
+            tx,
+            capture: Some(capture),
+            active: false,
+        })
     }
 
-    pub fn start(&self, mode: Mode) {
+    /// Reopens the mic with new audio settings or after its device came back.
+    /// The old stream (and its echo canceller) goes first, since node names clash.
+    pub fn reconnect(&mut self, audio: &Audio) {
+        self.capture = None;
+        match spawn_capture(audio, self.tx.clone()) {
+            Ok(c) => {
+                c.set_active(self.active);
+                self.capture = Some(c);
+                tracing::info!("mic reopened");
+            }
+            Err(e) => tracing::error!("reopening the mic: {e:#}"),
+        }
+    }
+
+    fn set_active(&mut self, active: bool) {
+        self.active = active;
+        if let Some(c) = &self.capture {
+            c.set_active(active);
+        }
+    }
+
+    pub fn start(&mut self, mode: Mode) {
         let _ = self.tx.send(Msg::Start(mode));
-        self.capture.set_active(true);
+        self.set_active(true);
     }
 
     /// End the utterance in progress and transcribe it (push-to-talk release).
-    pub fn finish(&self) {
-        self.capture.set_active(false);
+    pub fn finish(&mut self) {
+        self.set_active(false);
         let _ = self.tx.send(Msg::Finish);
     }
 
     /// The mic doesn't hear our own speech, so it can stay open while speaking.
     pub fn echo_cancelled(&self) -> bool {
-        self.capture.echo_cancelled()
+        self.capture.as_ref().is_some_and(Capture::echo_cancelled)
     }
 
     /// Stop listening and discard any utterance in progress.
-    pub fn stop(&self) {
-        self.capture.set_active(false);
+    pub fn stop(&mut self) {
+        self.set_active(false);
         let _ = self.tx.send(Msg::Stop);
     }
+}
+
+fn spawn_capture(audio: &Audio, tx: mpsc::Sender<Msg>) -> Result<Capture, vivus_audio::Error> {
+    Capture::spawn(
+        CaptureOptions {
+            target: audio.input.clone(),
+            echo_cancel: audio.echo_cancel.then(|| EchoCancelOptions {
+                reference: audio.output.clone(),
+            }),
+            keep_open: audio.keep_mic_open,
+        },
+        move |samples| {
+            let _ = tx.send(Msg::Audio(samples));
+        },
+    )
 }
 
 /// A speech role resolved to the local-speech provider.

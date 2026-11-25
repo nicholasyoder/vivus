@@ -76,12 +76,22 @@ pub fn watch(
     Ok(watcher)
 }
 
+/// Settings that reopen the mic when changed.
+pub fn reopens_mic(path: &str) -> bool {
+    matches!(
+        path,
+        "audio.input" | "audio.output" | "audio.echo_cancel" | "audio.keep_mic_open"
+    )
+}
+
 /// Settings that take effect only when the daemon restarts (speech threads,
-/// audio graph and portal shortcuts are set up once).
+/// playback and portal shortcuts are set up once). `audio.output` reopens the
+/// mic (the echo canceller's reference) but speech keeps its old sink.
 pub fn needs_restart(path: &str) -> bool {
-    ["audio.", "shortcuts.", "roles.stt.", "roles.tts."]
-        .iter()
-        .any(|p| path.starts_with(p))
+    (path.starts_with("audio.") && (!reopens_mic(path) || path == "audio.output"))
+        || ["shortcuts.", "roles.stt.", "roles.tts."]
+            .iter()
+            .any(|p| path.starts_with(p))
         || path.starts_with("providers.")
             && (path.ends_with(".models_dir") || path.ends_with(".threads"))
 }
@@ -135,7 +145,9 @@ mod tests {
 
     #[test]
     fn restart_paths() {
-        assert!(needs_restart("audio.input"));
+        assert!(!needs_restart("audio.input"));
+        assert!(needs_restart("audio.output") && reopens_mic("audio.output"));
+        assert!(needs_restart("audio.duck_volume"));
         assert!(needs_restart("providers.local-speech.threads"));
         assert!(!needs_restart("roles.router.model"));
         assert!(!needs_restart("debug.transcribe_only"));

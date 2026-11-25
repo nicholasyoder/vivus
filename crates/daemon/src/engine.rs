@@ -31,6 +31,7 @@ pub struct Shared {
     pub documents: DocumentStore,
     /// The effective config, for `org.vivus.Settings.Get`.
     pub config_json: String,
+    pub audio_devices: Vec<vivus_dbus::AudioDevice>,
 }
 
 /// Where the config lives and what it last contained, to tell our own writes
@@ -67,6 +68,8 @@ pub enum Command {
     },
     /// The config file may have been edited by hand.
     ConfigFileChanged,
+    /// Audio sources and sinks, after hotplug or a default change.
+    AudioDevices(Vec<vivus_audio::Device>),
 }
 
 /// The reply in progress.
@@ -97,6 +100,7 @@ pub struct Engine {
     generation: u64,
     windows: Option<SharedWindows>,
     clipboard: Option<SharedClipboard>,
+    audio_devices: Vec<vivus_audio::Device>,
 }
 
 impl Engine {
@@ -124,6 +128,7 @@ impl Engine {
             generation: 0,
             windows,
             clipboard,
+            audio_devices: Vec::new(),
         }
     }
 
@@ -184,7 +189,7 @@ impl Engine {
             Command::StartListening => self.start_listening(Mode::Hold).await?,
             Command::StopListening => {
                 if self.listen_mode == Some(Mode::Hold) {
-                    if let Some(v) = &self.voice {
+                    if let Some(v) = &mut self.voice {
                         v.finish();
                     }
                     self.listen_mode = None;
@@ -214,6 +219,7 @@ impl Engine {
                 let _ = reply.send(result.map_err(|e| format!("{e:#}")));
             }
             Command::ConfigFileChanged => self.reload_config().await?,
+            Command::AudioDevices(list) => self.on_audio_devices(list).await?,
             Command::Reply { generation, event } => {
                 if self
                     .reply
@@ -230,7 +236,7 @@ impl Engine {
     async fn start_listening(&mut self, mode: Mode) -> zbus::Result<()> {
         // Talking over a reply interrupts it.
         self.cancel_reply();
-        let Some(voice) = &self.voice else {
+        let Some(voice) = &mut self.voice else {
             tracing::warn!("listen requested but voice isn't available (see earlier errors)");
             return Ok(());
         };
@@ -245,7 +251,7 @@ impl Engine {
     async fn stop_listening(&mut self) -> zbus::Result<()> {
         self.cancel_reply();
         self.user_talking(false);
-        if let Some(v) = &self.voice {
+        if let Some(v) = &mut self.voice {
             v.stop();
         }
         self.listen_mode = None;
@@ -415,12 +421,54 @@ impl Engine {
         }
         self.shared.lock().unwrap().config_json = config.to_json();
         self.config = config;
+        if paths.iter().any(|p| settings::reopens_mic(p))
+            && let Some(v) = &mut self.voice
+        {
+            v.reconnect(&self.config.audio);
+        }
         let iface = self
             .conn
             .object_server()
             .interface::<_, service::Settings>(vivus_dbus::PATH)
             .await?;
         service::Settings::changed(iface.signal_emitter(), &paths).await
+    }
+
+    async fn on_audio_devices(&mut self, list: Vec<vivus_audio::Device>) -> zbus::Result<()> {
+        let present = |devs: &[vivus_audio::Device], name: &str| {
+            devs.iter()
+                .any(|d| d.name == name && d.direction == vivus_audio::Direction::Source)
+        };
+        // A stream whose target vanished stays on the fallback device; move it back.
+        if let Some(input) = &self.config.audio.input
+            && present(&list, input)
+            && !present(&self.audio_devices, input)
+            && !self.audio_devices.is_empty()
+            && let Some(v) = &mut self.voice
+        {
+            tracing::info!("input {input} is back");
+            v.reconnect(&self.config.audio);
+        }
+        let wire: Vec<vivus_dbus::AudioDevice> = list
+            .iter()
+            .map(|d| {
+                (
+                    d.name.clone(),
+                    d.description.clone(),
+                    d.is_default,
+                    d.direction.as_str().into(),
+                )
+            })
+            .collect();
+        tracing::debug!("audio devices: {wire:?}");
+        self.shared.lock().unwrap().audio_devices = wire.clone();
+        self.audio_devices = list;
+        let iface = self
+            .conn
+            .object_server()
+            .interface::<_, service::Settings>(vivus_dbus::PATH)
+            .await?;
+        service::Settings::audio_devices_changed(iface.signal_emitter(), &wire).await
     }
 
     async fn on_reply(&mut self, event: ReplyEvent) -> zbus::Result<()> {
@@ -433,7 +481,7 @@ impl Engine {
                 if let Some(speaker) = &self.speaker {
                     if start {
                         // Without echo cancellation the mic would hear the reply.
-                        if let (Some(_), Some(voice)) = (self.listen_mode, &self.voice)
+                        if let (Some(_), Some(voice)) = (self.listen_mode, &mut self.voice)
                             && !voice.echo_cancelled()
                         {
                             voice.stop();
@@ -486,7 +534,7 @@ impl Engine {
 
     /// Back to listening in conversation mode, else idle.
     async fn after_reply(&mut self) -> zbus::Result<()> {
-        match (self.listen_mode, &self.voice) {
+        match (self.listen_mode, &mut self.voice) {
             (Some(mode), Some(voice)) => {
                 // Restarting would drop speech already in progress.
                 if std::mem::take(&mut self.mic_paused) {

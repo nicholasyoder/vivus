@@ -66,6 +66,8 @@ enum SettingsCmd {
     Set { path: String, value: String },
     /// Remove a key so its default applies.
     Reset { path: String },
+    /// List audio inputs and outputs: the names `audio.input` / `audio.output` take.
+    Devices,
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -141,6 +143,16 @@ async fn settings(conn: &zbus::Connection, action: SettingsCmd) -> anyhow::Resul
             proxy.set(&path, &to_variant(&value)?).await?;
         }
         SettingsCmd::Reset { path } => proxy.reset(&path).await?,
+        SettingsCmd::Devices => {
+            let devices = proxy
+                .list_audio_devices()
+                .await
+                .context("talking to vivus-daemon (is it running?)")?;
+            for (name, description, is_default, direction) in devices {
+                let mark = if is_default { "*" } else { " " };
+                println!("{direction:<6} {mark} {name}\n           {description}");
+            }
+        }
     }
     Ok(())
 }

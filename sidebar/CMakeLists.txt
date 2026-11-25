@@ -7,10 +7,13 @@ find_package(LayerShellQt REQUIRED)
 qt_standard_project_setup(REQUIRES 6.8)
 
 set(DBUS_SRCS)
-qt_add_dbus_interface(DBUS_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/../dbus/org.vivus.Assistant.xml vivus_interface)
+set(DBUS_XML ${CMAKE_CURRENT_SOURCE_DIR}/../dbus/org.vivus.Assistant.xml)
+set_source_files_properties(${DBUS_XML} PROPERTIES INCLUDE dbustypes.h)
+qt_add_dbus_interface(DBUS_SRCS ${DBUS_XML} vivus_interface)
 
 qt_add_executable(vivus-sidebar
     src/main.cpp
+    src/dbustypes.h src/dbustypes.cpp
     src/daemonclient.h src/daemonclient.cpp
     src/sidebarwindow.h src/sidebarwindow.cpp
     ${DBUS_SRCS}

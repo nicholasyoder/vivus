@@ -96,6 +96,13 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .map(|c| Arc::new(c) as clipboard::SharedClipboard);
 
+    let devices_tx = tx.clone();
+    let _devices = vivus_audio::Devices::spawn(move |list| {
+        let _ = devices_tx.send(Command::AudioDevices(list));
+    })
+    .inspect_err(|e| tracing::warn!("audio device list unavailable: {e:#}"))
+    .ok();
+
     shortcuts::spawn(&config.shortcuts, tx.clone(), conn.clone());
 
     let engine = tokio::spawn(

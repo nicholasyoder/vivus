@@ -6,6 +6,9 @@ use zbus::proxy;
 pub const SERVICE: &str = "org.vivus";
 pub const PATH: &str = "/org/vivus";
 
+/// `ListAudioDevices` entry: node name, description, is default, `source` | `sink`.
+pub type AudioDevice = (String, String, bool, String);
+
 #[proxy(
     interface = "org.vivus.Assistant",
     default_service = "org.vivus",
@@ -52,6 +55,10 @@ pub trait Settings {
     fn set(&self, path: &str, value: &zbus::zvariant::Value<'_>) -> zbus::Result<()>;
     fn reset(&self, path: &str) -> zbus::Result<()>;
 
+    fn list_audio_devices(&self) -> zbus::Result<Vec<AudioDevice>>;
+
     #[zbus(signal)]
     fn changed(&self, paths: Vec<String>) -> zbus::Result<()>;
+    #[zbus(signal)]
+    fn audio_devices_changed(&self, devices: Vec<AudioDevice>) -> zbus::Result<()>;
 }

@@ -57,21 +57,46 @@ accepted or refused the edit. `vivusctl settings get|set|reset` wraps these.
   re-read. Text equal to our own last write is ignored. Invalid text is logged
   and the last good config kept.
 - Applied live: `roles.*` and `providers.*` (the router is rebuilt on the next
-  turn) and `debug.*`. After a restart, for now: `audio.*`, `shortcuts.*`,
-  `roles.stt.*`, `roles.tts.*` and local-speech `models_dir`/`threads`
-  (`settings::needs_restart`). The daemon logs which. The audio-device and
-  settings-page items move audio keys to live.
+  turn), `debug.*`, and the mic settings `audio.input`, `audio.echo_cancel`,
+  `audio.keep_mic_open` (see [Audio devices](#audio-devices)). After a
+  restart, for now: the other `audio.*` keys, `shortcuts.*`, `roles.stt.*`,
+  `roles.tts.*` and local-speech `models_dir`/`threads`
+  (`settings::needs_restart`). The daemon logs which. The settings-page item
+  moves the rest of `audio.*` to live.
 
 ## Audio devices
 
-`crates/audio` enumerates PipeWire nodes from the registry
-(`Audio/Source`, later `Audio/Sink` for TTS playback) and tracks add/remove.
+`vivus_audio::Devices` watches the PipeWire registry on its own thread
+(`vivus-devices`): nodes of class `Audio/Source`, `Audio/Source/Virtual` and
+`Audio/Sink`, plus the `default` metadata's `default.audio.source` /
+`default.audio.sink` for the is-default flag. It reports the whole list once
+the initial scan is done (two core syncs: globals, then the metadata
+properties that binding sends) and again whenever the list changes, so the
+daemon emits `AudioDevicesChanged` only for real changes. Our own echo-cancel
+nodes (`vivus-*`) are left out. `vivusctl settings devices` prints the list.
+
 Choosing a device sets `audio.input` / `audio.output` to the node name. "Default"
-means unset, which follows the system default. Our own echo-cancel nodes
-(`vivus-echo-cancel-*`) are hidden from the pickers. Speech volume sets the playback
-stream's volume (what a mixer shows, so the two agree); `duck_volume` is how far
-other apps go down while speaking. A level meter next to the input
-picker shows whether the mic is actually working.
+means unset, which follows the system default.
+
+**Live input switching.** A change to `audio.input`, `audio.echo_cancel`,
+`audio.keep_mic_open` or `audio.output` (the canceller's reference) reopens the
+mic: the old stream and its echo-cancel module are dropped first (node names
+would clash), then a new one is spawned and set active if we were listening.
+Speech playback still picks up `audio.output` only after a restart.
+
+**Hotplug.** If the configured input disappears, WirePlumber moves the stream
+to the default source. When it shows up again in the device list, the daemon
+reopens the mic so it goes back to the chosen device (checked with a lingering
+`support.null-audio-sink` node created and destroyed via `pw-cli`).
+
+Still to come with the settings page: speech volume sets the playback stream's
+volume (what a mixer shows, so the two agree); `duck_volume` is how far other
+apps go down while speaking. A level meter next to the input picker shows
+whether the mic is actually working.
+
+**Sidebar types.** `a(ssbs)` needs a Qt type name for `qdbusxml2cpp`, so the
+XML annotates it as `AudioDeviceList`, declared in `sidebar/src/dbustypes.h`
+and registered at startup.
 
 ## Roles and providers
 

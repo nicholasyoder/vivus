@@ -78,5 +78,18 @@
     <signal name="Changed">
       <arg name="paths" type="as"/>
     </signal>
+
+    <!-- Audio sources and sinks for audio.input / audio.output: node name (the
+         setting's value), description, is the system default, direction
+         (source | sink). Our own echo-cancel nodes are left out. -->
+    <method name="ListAudioDevices">
+      <arg name="devices" type="a(ssbs)" direction="out"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="AudioDeviceList"/>
+    </method>
+    <!-- On hotplug or a default change, with the new list. -->
+    <signal name="AudioDevicesChanged">
+      <arg name="devices" type="a(ssbs)"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="AudioDeviceList"/>
+    </signal>
   </interface>
 </node>

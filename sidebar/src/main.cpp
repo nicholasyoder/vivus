@@ -1,4 +1,5 @@
 #include "daemonclient.h"
+#include "dbustypes.h"
 #include "sidebarwindow.h"
 
 #include <QApplication>
@@ -24,6 +25,7 @@ static QString loadStyleSheet()
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    registerDBusTypes();
     app.setApplicationName(QStringLiteral("vivus-sidebar"));
     // Also the Wayland app ID and the portal app ID the daemon registers.
     app.setDesktopFileName(QStringLiteral("org.vivus.Vivus"));

@@ -1,10 +1,12 @@
 //! PipeWire audio capture and playback.
 
 mod capture;
+mod devices;
 mod duck;
 mod playback;
 
 pub use capture::{Capture, CaptureOptions, ECHO_CANCEL_SOURCE, EchoCancelOptions};
+pub use devices::{Device, Devices, Direction};
 pub use playback::{Playback, PlaybackOptions, PlaybackSender};
 
 /// Capture always delivers 16 kHz mono f32; PipeWire converts from the device format.
