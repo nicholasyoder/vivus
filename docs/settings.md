@@ -224,6 +224,46 @@ are kept.
   1 s for parakeet-110m), then listening resumes in the same mode.
   `audio.record_utterances` reloads it the same way.
 
+## API keys
+
+Planned. Keys stay out of `config.toml`, which people share and keep in
+dotfiles. The settings window sets them; nothing has to be edited by hand.
+
+- **Store.** The Secret Service (GNOME Keyring, KWallet, KeePassXC) through
+  the pure-Rust `oo7` crate, one item per provider with attributes
+  `application = vivus`, `provider = <name>`. Without a keyring (common on
+  sway or Hyprland), the daemon writes `~/.config/vivus/.env` itself, mode 0600.
+- **Lookup order** for a provider's key: its `api_key_env` variable in the
+  environment, then the keyring, then `.env`. An environment variable still
+  wins, so scripted setups keep working.
+- **D-Bus.** `SetApiKey(s provider, s key)` (an empty key removes it) and
+  `ApiKeyStatus(s provider) → s`: `keyring`, `file`, `environment` or
+  `missing`. A key is never sent back out, so the window shows a masked
+  field with Replace and Remove buttons, not the key.
+- **Applying.** Setting a key drops the router (rebuilt on the next turn) and
+  that provider's `/models` cache entry. The window then lists the models
+  again, which also tests the key.
+
+## Providers
+
+Planned. The window gets a Providers group listing each provider with its
+kind, base URL and key status.
+
+- **Built-ins.** `openai` (`https://api.openai.com/v1`), `nano-gpt` and
+  `groq` exist without any config, merged under the file's `[providers]`. A
+  file entry with the same name overrides one. Built-ins can't be removed,
+  but without a key they cost nothing, and the role pickers mark them
+  "(no key)". `local-speech` and `claude-code` become built-ins too, so a
+  fresh config needs no `[providers]` table at all.
+- **Adding.** Name, base URL and optional key, for `openai-compatible` only.
+  A provider table has to be written in one step (`kind` and `base_url` are
+  both required), so `Set` also takes a dictionary (`a{sv}`) and writes it
+  as a table. Adding is `Set("providers.<name>", {kind, base_url})`, then
+  `SetApiKey`.
+- **Removing** is `Reset("providers.<name>")`, which config validation
+  already refuses while a role uses the provider. Removing also deletes the
+  provider's key.
+
 ## Later
 
 - Compositor backend override (auto-detect `wayland-std` vs `vivus-protocol`),

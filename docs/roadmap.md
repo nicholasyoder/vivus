@@ -54,6 +54,8 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] Settings window (its own toplevel): input/output device pickers, mic level meter with a clip indicator, end-of-turn silence, speech volume, duck volume; all applied live (2026-11-24, `e4be0e9`) — [settings.md](settings.md#settings-window)
 - [x] Mic gain slider in Settings (the input's PipeWire volume, saved by WirePlumber; follows other apps' changes); level meter turns red when it clips (2026-11-24, `28ea698`) — [settings.md](settings.md#input-gain)
 - [x] Per-role provider and model pickers (`ListModels`: local models on disk, remote via `/models`), TTS voice; STT/TTS changes reload live (2026-11-25, `e56a4a3`) — [settings.md](settings.md#roles-and-providers)
+- [ ] API keys from the settings window: stored in the Secret Service, `.env` fallback without a keyring; never sent back over D-Bus; key status per provider — [settings.md](settings.md#api-keys)
+- [ ] Add/remove OpenAI-compatible providers in the settings window (name, base URL, key); built-in `openai`, `nano-gpt` and `groq` present without config — [settings.md](settings.md#providers)
 
 ### 1e: Smarter answers
 
@@ -68,7 +70,6 @@ everyday use work comes first, then smarter answers, then polish.
 - [ ] Local neural G2P as the offline / over-deadline fallback for OOV words — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] Remote STT provider (Groq Whisper, final-only) so `stt` has two providers
 - [ ] Sidebar polish: document history UX, code blocks, images, show/hide behaviour
-- [ ] Add/edit providers (base URL, API key) from the sidebar, once key storage is decided
 - [ ] Pronunciation lookups follow a live `roles.router` change (they keep the model the speaker loaded with) — [speech.md](speech.md#out-of-lexicon-words)
 - [ ] Benchmark the light tier on a 4-core laptop with no GPU; settle the default STT/TTS models — [speech.md](speech.md#tiers)
 
@@ -115,11 +116,13 @@ the active window alone. Design and research: [gaze.md](gaze.md).
 
 - Wake word as well as push-to-talk? Probably later and optional.
 - Should the router have a small local fallback for offline use? (Speech is already local.)
-- Where to store API keys long-term: Secret Service, or keep env + `~/.config/vivus/.env` (current interim)? (Blocks editing providers in the sidebar.)
+- Secret Service with a `.env` fallback (the plan in [settings.md](settings.md#api-keys)), or only the `.env` file, written by the daemon?
 - How much conversation and sidebar history to keep, and where (documents are in memory only today).
 - Which actions need spoken or visual confirmation, and how to keep screen or web text from triggering actions (treat it as data; confirm what it suggests).
 
 ## Decided
+
+- API keys never go in `config.toml`, and they're managed from the settings window rather than by hand-editing `.env` (2026-11-25).
 
 - Settings get their own normal window, not a page in the layer-shell sidebar (2026-11-24).
 - No systemd user unit: the daemon and sidebar start from the session's autostart, which fits any desktop (2026-11-24).
