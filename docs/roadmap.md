@@ -57,7 +57,7 @@ everyday use work comes first, then smarter answers, then polish.
 - [x] API keys from the settings window: stored in the Secret Service, `.env` fallback without a keyring; never sent back over D-Bus; key status per provider (2026-11-25, `7a44fe4`) — [settings.md](settings.md#api-keys)
 - [x] Add/remove OpenAI-compatible providers in the settings window (name, base URL, key); built-in `openai`, `nano-gpt`, `groq`, `local-speech` and `claude-code` present without config (2026-11-25, `a1b7442`) — [settings.md](settings.md#providers)
 - [x] Drop the built-in providers again; presets (OpenAI, Groq, NanoGPT, Claude Code) in the Add row instead (2026-11-25, `65cced5`) — [settings.md](settings.md#providers)
-- [x] Config format: `[providers]` for API providers only (no `kind`); `[speech]` and `[claude_code]` sections; speech roles name no provider; `ListProviders` returns labels (2026-11-25, `HASH`) — [settings.md](settings.md#providers)
+- [x] Config format: `[providers]` for API providers only (no `kind`); `[speech]` and `[claude_code]` sections; speech roles name no provider; `ListProviders` returns labels (2026-11-25, `6287539`) — [settings.md](settings.md#providers)
 
 ### 1e: Smarter answers
 
