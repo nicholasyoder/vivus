@@ -8,6 +8,7 @@ mod chat;
 mod claude_code;
 mod client;
 pub mod partial;
+mod permission_server;
 mod sse;
 
 pub use chat::{
@@ -17,3 +18,4 @@ pub use claude_code::{
     ClaudeCode, ClaudeError, ClaudeEvent, ClaudeRequest, ClaudeResult, ClaudeRun,
 };
 pub use client::{ChatStream, Client, Error};
+pub use permission_server::PermissionPrompt;

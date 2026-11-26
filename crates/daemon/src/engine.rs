@@ -2,7 +2,7 @@
 //! router runs as a task whose events come back as `Command::Reply`, tagged
 //! with a generation so events from a cancelled reply are ignored.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -14,6 +14,7 @@ use tokio::sync::oneshot;
 use tokio::task::AbortHandle;
 use vivus_core::settings::Value as SettingValue;
 use vivus_core::{AssistantState, Config, DocumentStore};
+use vivus_inference::PermissionPrompt;
 use vivus_speech::{Event, Mode};
 use zbus::Connection;
 
@@ -21,6 +22,7 @@ use crate::choices::{self, ModelCache};
 use crate::clipboard::SharedClipboard;
 use crate::conversation::{Exchange, History};
 use crate::keyring;
+use crate::permission::{self, PermissionDisplay};
 use crate::router::{ReplyEvent, Router};
 use crate::service;
 use crate::settings;
@@ -39,6 +41,8 @@ pub struct Shared {
     pub audio_devices: Vec<vivus_dbus::AudioDevice>,
     /// The input's volume, for `GetInputGain`; negative while unknown.
     pub input_gain: f64,
+    /// Active permission prompt `(id, tool, summary, detail)` for `PendingPermission`.
+    pub pending_permission: Option<(String, String, String, String)>,
 }
 
 /// Where the config lives and what it last contained, to tell our own writes
@@ -130,6 +134,8 @@ pub enum Command {
         model: String,
         reply: oneshot::Sender<Result<Vec<vivus_dbus::Choice>, String>>,
     },
+    /// `org.vivus.Assistant.AnswerPermission`.
+    AnswerPermission { id: String, allow: bool },
 }
 
 /// Speech edits often come in pairs (reset the voice, set the model); load once.
@@ -143,6 +149,14 @@ pub struct Services {
     pub windows: Option<SharedWindows>,
     pub clipboard: Option<SharedClipboard>,
     pub devices: Option<vivus_audio::Devices>,
+}
+
+/// A permission prompt currently waiting for the user's yes/no.
+struct PendingPermission {
+    id: String,
+    prompt: PermissionPrompt,
+    /// We turned on VAD listening just to hear this answer; stop it afterwards.
+    temp_listen: bool,
 }
 
 /// The reply in progress.
@@ -174,6 +188,10 @@ pub struct Engine {
     history: History,
     reply: Option<Reply>,
     generation: u64,
+    /// Currently displayed/spoken permission prompt, plus any queued behind it.
+    pending_permission: Option<PendingPermission>,
+    permission_queue: VecDeque<PermissionPrompt>,
+    permission_seq: u64,
     windows: Option<SharedWindows>,
     clipboard: Option<SharedClipboard>,
     audio_devices: Vec<vivus_audio::Device>,
@@ -218,6 +236,9 @@ impl Engine {
             history: History::default(),
             reply: None,
             generation: 0,
+            pending_permission: None,
+            permission_queue: VecDeque::new(),
+            permission_seq: 0,
             windows,
             clipboard,
             audio_devices: Vec::new(),
@@ -251,7 +272,7 @@ impl Engine {
             if matches!(cmd, Command::Quit) {
                 tracing::info!("quit requested");
                 // While the audio threads are all up, so ducked apps get restored.
-                self.cancel_reply();
+                let _ = self.cancel_reply().await;
                 break;
             }
             if let Err(e) = self.handle(cmd).await {
@@ -374,8 +395,14 @@ impl Engine {
                 }
             }
             Command::Quit => {} // handled in run()
+            Command::AnswerPermission { id, allow } => {
+                self.answer_permission(&id, allow).await?;
+            }
             Command::Ask(text) => {
                 self.transcript("user", &text, true).await?;
+                if self.try_answer_permission_text(&text).await? {
+                    return Ok(());
+                }
                 self.respond(&text).await?;
             }
             Command::Speech(event) => self.on_speech(event).await?,
@@ -565,7 +592,7 @@ impl Engine {
         // The old one won't report the reply it's playing as finished.
         let speaking = self.speaker.is_some() && self.state() == AssistantState::Speaking;
         if speaking {
-            self.cancel_reply();
+            self.cancel_reply().await?;
         }
         self.speaker = Some(s);
         if speaking {
@@ -583,8 +610,15 @@ impl Engine {
     }
 
     async fn start_listening(&mut self, mode: Mode) -> zbus::Result<()> {
-        // Talking over a reply interrupts it.
-        self.cancel_reply();
+        // Answering a pending permission prompt by voice (PTT or toggle) keeps
+        // the agent run alive; otherwise talking over a reply interrupts it.
+        if self.pending_permission.is_some() {
+            if let Some(s) = &self.speaker {
+                s.stop();
+            }
+        } else {
+            self.cancel_reply().await?;
+        }
         let Some(voice) = &mut self.voice else {
             tracing::warn!("listen requested but voice isn't available (see earlier errors)");
             return Ok(());
@@ -598,7 +632,7 @@ impl Engine {
     }
 
     async fn stop_listening(&mut self) -> zbus::Result<()> {
-        self.cancel_reply();
+        self.cancel_reply().await?;
         self.user_talking(false);
         if let Some(v) = &mut self.voice {
             v.stop();
@@ -632,12 +666,21 @@ impl Engine {
             }
             Event::SpeechPossible | Event::NotSpeech => {}
             Event::SpeechStarted => {
-                // Barge-in: talking over a reply (or its thinking) drops it.
-                let busy = self.reply.is_some() || self.state() == AssistantState::Speaking;
-                if busy && self.listen_mode == Some(Mode::Vad) {
-                    tracing::info!("barge-in: speech during {}", self.state());
-                    self.cancel_reply();
+                // While waiting on a permission prompt, keep the agent alive and
+                // only silence the spoken question so the user can answer it.
+                if self.pending_permission.is_some() {
+                    if let Some(s) = &self.speaker {
+                        s.stop();
+                    }
                     self.set_state(AssistantState::Listening).await?;
+                } else {
+                    // Barge-in: talking over a reply (or its thinking) drops it.
+                    let busy = self.reply.is_some() || self.state() == AssistantState::Speaking;
+                    if busy && self.listen_mode == Some(Mode::Vad) {
+                        tracing::info!("barge-in: speech during {}", self.state());
+                        self.cancel_reply().await?;
+                        self.set_state(AssistantState::Listening).await?;
+                    }
                 }
             }
             Event::Partial(text) => self.transcript("user", &text, false).await?,
@@ -647,7 +690,11 @@ impl Engine {
                 }
                 self.transcript("user", &text, true).await?;
                 if self.listen_mode.is_none() {
-                    self.set_state(AssistantState::Idle).await?;
+                    if self.pending_permission.is_some() {
+                        self.set_state(AssistantState::Thinking).await?;
+                    } else {
+                        self.set_state(AssistantState::Idle).await?;
+                    }
                 }
             }
             Event::Final(text) => {
@@ -657,6 +704,9 @@ impl Engine {
                     s.prefetch(&text);
                 }
                 self.transcript("user", &text, true).await?;
+                if self.try_answer_permission_text(&text).await? {
+                    return Ok(());
+                }
                 self.respond(&text).await?;
             }
         }
@@ -664,7 +714,7 @@ impl Engine {
     }
 
     async fn respond(&mut self, text: &str) -> zbus::Result<()> {
-        self.cancel_reply();
+        self.cancel_reply().await?;
         self.set_state(AssistantState::Thinking).await?;
 
         let router = match self.router() {
@@ -841,7 +891,7 @@ impl Engine {
             // The new stream won't report the old reply finishing.
             let speaking = self.state() == AssistantState::Speaking;
             if speaking {
-                self.cancel_reply();
+                self.cancel_reply().await?;
             }
             let output = self.config.audio.output.clone();
             self.speaker.as_mut().unwrap().set_output(output);
@@ -898,9 +948,10 @@ impl Engine {
     async fn on_reply(&mut self, event: ReplyEvent) -> zbus::Result<()> {
         match event {
             ReplyEvent::Text(t) => {
+                let not_speaking = self.state() != AssistantState::Speaking;
                 let reply = self.reply.as_mut().unwrap();
                 reply.text.push_str(&t);
-                let start = !reply.speaking && !reply.text.trim().is_empty();
+                let start = (!reply.speaking || not_speaking) && !reply.text.trim().is_empty();
                 let text = reply.text.trim().to_owned();
                 if let Some(speaker) = &self.speaker {
                     if start {
@@ -937,7 +988,11 @@ impl Engine {
                 self.document_changed(&doc).await?;
                 self.request_sidebar("show").await?;
             }
+            ReplyEvent::Permission(prompt) => {
+                self.on_permission(prompt).await?;
+            }
             ReplyEvent::Done => {
+                self.clear_permissions().await?;
                 let reply = self.reply.take().unwrap();
                 self.transcript("assistant", reply.text.trim(), true)
                     .await?;
@@ -952,6 +1007,136 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    /// Shows and speaks a permission prompt, or queues it if one is already up.
+    async fn on_permission(&mut self, prompt: PermissionPrompt) -> zbus::Result<()> {
+        if self.pending_permission.is_some() {
+            self.permission_queue.push_back(prompt);
+            return Ok(());
+        }
+        self.permission_seq += 1;
+        let id = format!("perm-{}", self.permission_seq);
+        let PermissionDisplay {
+            tool,
+            summary,
+            detail,
+            spoken,
+        } = permission::describe(&prompt.tool_name, &prompt.input);
+        tracing::info!("permission prompt {id} ({tool}): {summary}");
+        // If we aren't already listening and echo cancellation is on, open the
+        // mic briefly so the user can say "yes" / "no" without pressing a key.
+        let mut temp_listen = false;
+        if self.listen_mode.is_none()
+            && let Some(voice) = &mut self.voice
+            && voice.echo_cancelled()
+        {
+            voice.start(Mode::Vad);
+            self.listen_mode = Some(Mode::Vad);
+            self.mic_paused = false;
+            temp_listen = true;
+        }
+        self.pending_permission = Some(PendingPermission {
+            id: id.clone(),
+            prompt,
+            temp_listen,
+        });
+        self.shared.lock().unwrap().pending_permission =
+            Some((id.clone(), tool.clone(), summary.clone(), detail.clone()));
+        let iface = self.assistant().await?;
+        service::Assistant::permission_requested(
+            iface.signal_emitter(),
+            &id,
+            &tool,
+            &summary,
+            &detail,
+        )
+        .await?;
+        self.request_sidebar("show").await?;
+        if let Some(speaker) = &self.speaker {
+            if let (Some(_), Some(voice)) = (self.listen_mode, &mut self.voice)
+                && !voice.echo_cancelled()
+            {
+                voice.stop();
+                self.mic_paused = true;
+            }
+            self.set_state(AssistantState::Speaking).await?;
+            speaker.say(&spoken);
+            speaker.flush();
+        }
+        Ok(())
+    }
+
+    /// If a permission prompt is waiting and `text` is a clear yes/no, answer
+    /// it and return `true` so it isn't sent to the router as a new request.
+    async fn try_answer_permission_text(&mut self, text: &str) -> zbus::Result<bool> {
+        let Some(id) = self.pending_permission.as_ref().map(|p| p.id.clone()) else {
+            return Ok(false);
+        };
+        let Some(allow) = permission::parse_spoken_answer(text) else {
+            return Ok(false);
+        };
+        self.answer_permission(&id, allow).await?;
+        Ok(true)
+    }
+
+    async fn answer_permission(&mut self, id: &str, allow: bool) -> zbus::Result<()> {
+        let matches = self
+            .pending_permission
+            .as_ref()
+            .is_some_and(|p| p.id == id);
+        if !matches {
+            return Ok(());
+        }
+        let pending = self.pending_permission.take().unwrap();
+        self.shared.lock().unwrap().pending_permission = None;
+        if let Some(speaker) = &self.speaker {
+            speaker.stop();
+        }
+        if pending.temp_listen {
+            if let Some(voice) = &mut self.voice {
+                voice.stop();
+            }
+            self.listen_mode = None;
+            self.mic_paused = false;
+        }
+        tracing::info!(
+            "permission prompt {}: {}",
+            pending.id,
+            if allow { "allowed" } else { "denied" }
+        );
+        if allow {
+            pending.prompt.allow();
+        } else {
+            pending.prompt.deny("The user denied this action.");
+        }
+        let iface = self.assistant().await?;
+        service::Assistant::permission_resolved(iface.signal_emitter(), &pending.id).await?;
+        if let Some(next) = self.permission_queue.pop_front() {
+            Box::pin(self.on_permission(next)).await?;
+        } else if self.reply.is_some() {
+            self.set_state(AssistantState::Thinking).await?;
+        }
+        Ok(())
+    }
+
+    /// Denies and clears any pending/queued permission prompts (on cancel or done).
+    async fn clear_permissions(&mut self) -> zbus::Result<()> {
+        self.permission_queue.clear();
+        let Some(pending) = self.pending_permission.take() else {
+            return Ok(());
+        };
+        self.shared.lock().unwrap().pending_permission = None;
+        if pending.temp_listen {
+            if let Some(voice) = &mut self.voice {
+                voice.stop();
+            }
+            self.listen_mode = None;
+            self.mic_paused = false;
+        }
+        pending.prompt.deny("The request was cancelled.");
+        let iface = self.assistant().await?;
+        service::Assistant::permission_resolved(iface.signal_emitter(), &pending.id).await
     }
 
     /// A fixed spoken line outside the router (e.g. when it isn't configured).
@@ -991,7 +1176,8 @@ impl Engine {
 
     /// Drops the reply in progress: the LLM request closes and TTS goes quiet.
     /// The history notes it was cut off.
-    fn cancel_reply(&mut self) {
+    async fn cancel_reply(&mut self) -> zbus::Result<()> {
+        self.clear_permissions().await?;
         match self.reply.take() {
             Some(reply) => {
                 if let Some(task) = reply.task {
@@ -1010,6 +1196,7 @@ impl Engine {
         if let Some(s) = &self.speaker {
             s.stop();
         }
+        Ok(())
     }
 
     fn state(&self) -> AssistantState {

@@ -35,6 +35,13 @@ enum Cmd {
     ToggleSidebar,
     /// Print the assistant state.
     Status,
+    /// Approve or deny a pending agent permission prompt (omit action to inspect it).
+    Permission {
+        #[arg(value_enum)]
+        action: Option<PermissionAction>,
+        /// Prompt id; defaults to the currently pending one.
+        id: Option<String>,
+    },
     /// Read or change the config through the daemon, which validates and applies it.
     Settings {
         #[command(subcommand)]
@@ -100,6 +107,12 @@ enum PttAction {
     Stop,
 }
 
+#[derive(Clone, clap::ValueEnum)]
+enum PermissionAction {
+    Allow,
+    Deny,
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -138,9 +151,45 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Quit => proxy.quit().await,
         Cmd::ToggleSidebar => proxy.toggle_sidebar().await,
         Cmd::Status => proxy.state().await.map(|s| println!("{s}")),
+        Cmd::Permission { action, id } => {
+            return permission(&proxy, action, id).await;
+        }
         Cmd::Models { .. } | Cmd::Settings { .. } => unreachable!(),
     };
     result.context("talking to vivus-daemon (is it running?)")
+}
+
+async fn permission(
+    proxy: &AssistantProxy<'_>,
+    action: Option<PermissionAction>,
+    id: Option<String>,
+) -> anyhow::Result<()> {
+    match action {
+        None => {
+            let (id, tool, summary, detail) = proxy.pending_permission().await.context(DAEMON)?;
+            if id.is_empty() {
+                println!("none");
+            } else {
+                println!("{id} [{tool}] {summary}");
+                if !detail.is_empty() {
+                    println!("{detail}");
+                }
+            }
+        }
+        Some(act) => {
+            let id = match id {
+                Some(id) => id,
+                None => {
+                    let (pending, _, _, _) = proxy.pending_permission().await.context(DAEMON)?;
+                    anyhow::ensure!(!pending.is_empty(), "no pending permission prompt");
+                    pending
+                }
+            };
+            let allow = matches!(act, PermissionAction::Allow);
+            proxy.answer_permission(&id, allow).await.context(DAEMON)?;
+        }
+    }
+    Ok(())
 }
 
 async fn settings(conn: &zbus::Connection, action: SettingsCmd) -> anyhow::Result<()> {

@@ -67,6 +67,19 @@ impl Assistant {
         Ok(Self::sidebar_visibility_requested(&emitter, "toggle").await?)
     }
 
+    async fn pending_permission(&self) -> (String, String, String, String) {
+        self.shared
+            .lock()
+            .unwrap()
+            .pending_permission
+            .clone()
+            .unwrap_or_default()
+    }
+
+    async fn answer_permission(&self, id: String, allow: bool) -> fdo::Result<()> {
+        self.send(Command::AnswerPermission { id, allow })
+    }
+
     #[zbus(signal)]
     pub async fn transcript(
         emitter: &SignalEmitter<'_>,
@@ -79,6 +92,21 @@ impl Assistant {
     pub async fn sidebar_visibility_requested(
         emitter: &SignalEmitter<'_>,
         action: &str,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    pub async fn permission_requested(
+        emitter: &SignalEmitter<'_>,
+        id: &str,
+        tool: &str,
+        summary: &str,
+        detail: &str,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    pub async fn permission_resolved(
+        emitter: &SignalEmitter<'_>,
+        id: &str,
     ) -> zbus::Result<()>;
 }
 

@@ -194,24 +194,46 @@ of its own also gives Vivus runs their own Claude Code auto-memory and session
 history, apart from the user's projects and `~/CLAUDE.md`. `--add-dir $HOME`
 lets it read and edit the rest of the home directory.
 
-**Permissions.** A headless run can't ask, so anything that would prompt is
-denied. The first default, `--allowedTools WebSearch,WebFetch`, denied nearly
-every Bash call ("how much RAM do I have" failed). The default is now
-`--permission-mode auto`: Claude Code's classifier approves routine actions
-and blocks risky ones. Considered and not used: `dontAsk` with an allowlist
-(always one command short) and `bypassPermissions` (a misheard request or
-injected web text could run anything). Asking the user through the sidebar or
-voice via `--permission-prompt-tool` is a roadmap item.
+**Permissions.** By default runs use `--permission-mode auto`: Claude Code's
+classifier approves routine actions and escalates risky ones (or anything a
+different mode like `manual` asks about) to a `--permission-prompt-tool` served
+by the daemon. Considered and not used: `dontAsk` with an allowlist (always one
+command short) and `bypassPermissions` (a misheard request or injected web text
+could run anything).
+
+- For each run (`crates/inference/src/permission_server.rs`), `ClaudeRun` starts
+  a loopback Streamable-HTTP MCP server on `127.0.0.1:0` with a random bearer
+  token passed in `VIVUS_PERMISSION_TOKEN` (referenced via `${VIVUS_PERMISSION_TOKEN}`
+  in `--mcp-config` so the secret isn't in `argv`), and passes
+  `--permission-prompt-tool mcp__vivus__approve`.
+- When Claude Code calls the tool (`{ tool_name, input, tool_use_id }`),
+  `ClaudeRun` yields `ClaudeEvent::Permission(PermissionPrompt)` and waits on a
+  oneshot channel before replying `{ "behavior": "allow", "updatedInput": input }`
+  or `{ "behavior": "deny", "message": … }`. Dropping the run (cancel) closes the
+  server and kills the child.
+- The daemon (`crates/daemon/src/permission.rs`, `engine.rs`) emits
+  `PermissionRequested(id, tool, summary, detail)` over D-Bus, shows the
+  sidebar's Allow/Deny card, and speaks `"Claude wants to <action> — OK?"`.
+  With echo cancellation on, it opens VAD listening briefly if not already
+  listening so a spoken yes/no ("yes", "go ahead", "no", "don't") answers the
+  prompt without cancelling the agent run; clicking Allow/Deny, typing yes/no,
+  or `vivusctl permission allow|deny` all resolve it and emit
+  `PermissionResolved(id)`. Cancelling or asking something unrelated cancels the
+  run and denies the prompt.
 
 The permission flags go on the command line, not in the workspace's
 `.claude/settings.json`: Claude Code ignores parts of a project's settings
 (`permissions.additionalDirectories` at least) until someone accepts that
 directory's trust dialog interactively (Claude Code 2.1.325, 2026-11-25).
 
-Live run (2026-11-25, `vivusctl ask`, agent Sonnet): "check how much RAM and
-disk space this computer has, and save a reusable script for it": Bash
-allowed, `scripts/sysinfo.sh` written and run, three spoken sentences, 7.8 s,
-\$0.07.
+Live runs:
+
+- 2026-11-25 (`vivusctl ask`, agent Sonnet): "check how much RAM and disk space
+  this computer has, and save a reusable script for it": Bash allowed,
+  `scripts/sysinfo.sh` written and run, three spoken sentences, 7.8 s, \$0.07.
+- 2026-11-25 (`live_permission_prompt_with_claude_cli`, Haiku, `manual` mode):
+  Claude Code connected to the loopback MCP server with bearer auth, invoked
+  `mcp__vivus__approve` for `Bash`, received the denial and stopped (2.3 s).
 
 ## Conversation memory
 

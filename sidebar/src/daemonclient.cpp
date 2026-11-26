@@ -20,6 +20,10 @@ DaemonClient::DaemonClient(QObject *parent)
             this, &DaemonClient::visibilityRequested);
     connect(m_assistant, &OrgVivusAssistantInterface::Transcript,
             this, &DaemonClient::transcript);
+    connect(m_assistant, &OrgVivusAssistantInterface::PermissionRequested,
+            this, &DaemonClient::onPermissionRequested);
+    connect(m_assistant, &OrgVivusAssistantInterface::PermissionResolved,
+            this, &DaemonClient::onPermissionResolved);
     connect(m_documents, &OrgVivusDocumentsInterface::DocumentChanged,
             this, &DaemonClient::onDocumentChanged);
     bus.connect(Service, Path, QStringLiteral("org.freedesktop.DBus.Properties"),
@@ -55,6 +59,11 @@ void DaemonClient::ask(const QString &text)
 
 void DaemonClient::toggleListen() { m_assistant->ToggleListen(); }
 void DaemonClient::cancel() { m_assistant->Cancel(); }
+void DaemonClient::answerPermission(const QString &id, bool allow)
+{
+    if (!id.isEmpty())
+        m_assistant->AnswerPermission(id, allow);
+}
 
 void DaemonClient::quitDaemon()
 {
@@ -88,12 +97,31 @@ void DaemonClient::onDocumentChanged(const QString &id, const QString &title, co
     emit currentChanged();
 }
 
+void DaemonClient::onPermissionRequested(const QString &id, const QString &tool, const QString &summary, const QString &detail)
+{
+    m_permission = {id, tool, summary, detail};
+    emit permissionChanged();
+}
+
+void DaemonClient::onPermissionResolved(const QString &id)
+{
+    if (m_permission.id != id)
+        return;
+    m_permission = {};
+    emit permissionChanged();
+}
+
 void DaemonClient::setConnected(bool connected)
 {
-    if (connected)
+    if (connected) {
         refresh();
-    else
+    } else {
         setState(QStringLiteral("idle"));
+        if (!m_permission.id.isEmpty()) {
+            m_permission = {};
+            emit permissionChanged();
+        }
+    }
     if (m_connected == connected)
         return;
     m_connected = connected;
@@ -129,5 +157,15 @@ void DaemonClient::refresh()
         m_current = m_docs.size() - 1;
         emit documentsChanged();
         emit currentChanged();
+    });
+
+    auto *perm = new QDBusPendingCallWatcher(m_assistant->PendingPermission(), this);
+    connect(perm, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+        QDBusPendingReply<QString, QString, QString, QString> reply = *w;
+        if (reply.isError())
+            return;
+        m_permission = {reply.argumentAt<0>(), reply.argumentAt<1>(), reply.argumentAt<2>(), reply.argumentAt<3>()};
+        emit permissionChanged();
     });
 }

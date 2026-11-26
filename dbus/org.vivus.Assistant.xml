@@ -37,6 +37,30 @@
       <!-- show | hide | toggle -->
       <arg name="action" type="s"/>
     </signal>
+
+    <!-- Pending permission prompt from the agent (e.g. Claude Code). Empty id when none. -->
+    <method name="PendingPermission">
+      <arg name="id" type="s" direction="out"/>
+      <arg name="tool" type="s" direction="out"/>
+      <arg name="summary" type="s" direction="out"/>
+      <arg name="detail" type="s" direction="out"/>
+    </method>
+    <!-- Answer the pending permission prompt. -->
+    <method name="AnswerPermission">
+      <arg name="id" type="s" direction="in"/>
+      <arg name="allow" type="b" direction="in"/>
+    </method>
+    <!-- Agent needs approval for a tool call; show a card with Allow / Deny. -->
+    <signal name="PermissionRequested">
+      <arg name="id" type="s"/>
+      <arg name="tool" type="s"/>
+      <arg name="summary" type="s"/>
+      <arg name="detail" type="s"/>
+    </signal>
+    <!-- The prompt was answered (by click, voice or cancel) and should disappear. -->
+    <signal name="PermissionResolved">
+      <arg name="id" type="s"/>
+    </signal>
   </interface>
 
   <interface name="org.vivus.Documents">

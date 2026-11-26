@@ -4,6 +4,7 @@ mod clipboard;
 mod conversation;
 mod engine;
 mod keyring;
+mod permission;
 mod pronounce;
 mod router;
 mod service;

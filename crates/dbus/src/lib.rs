@@ -28,11 +28,23 @@ pub trait Assistant {
     fn cancel(&self) -> zbus::Result<()>;
     fn quit(&self) -> zbus::Result<()>;
     fn toggle_sidebar(&self) -> zbus::Result<()>;
+    fn pending_permission(&self) -> zbus::Result<(String, String, String, String)>;
+    fn answer_permission(&self, id: &str, allow: bool) -> zbus::Result<()>;
 
     #[zbus(signal)]
     fn transcript(&self, role: String, text: String, is_final: bool) -> zbus::Result<()>;
     #[zbus(signal)]
     fn sidebar_visibility_requested(&self, action: String) -> zbus::Result<()>;
+    #[zbus(signal)]
+    fn permission_requested(
+        &self,
+        id: String,
+        tool: String,
+        summary: String,
+        detail: String,
+    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    fn permission_resolved(&self, id: String) -> zbus::Result<()>;
 }
 
 #[proxy(

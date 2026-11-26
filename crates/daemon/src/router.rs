@@ -13,8 +13,8 @@ use vivus_apps::Apps;
 use vivus_core::config::Provider;
 use vivus_core::{ClipboardBackend, Config, Document, WindowAction, WindowBackend};
 use vivus_inference::{
-    ChatRequest, ClaudeCode, ClaudeEvent, ClaudeRequest, Client, Event, Message, Tool, ToolCall,
-    ToolChoice,
+    ChatRequest, ClaudeCode, ClaudeEvent, ClaudeRequest, Client, Event, Message, PermissionPrompt,
+    Tool, ToolCall, ToolChoice,
 };
 
 use crate::clipboard::{self, SharedClipboard};
@@ -151,7 +151,7 @@ pub struct Router {
 type Launcher = fn(&str) -> Result<String, String>;
 
 /// What a reply produces, in order; always ends with `Done`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum ReplyEvent {
     /// Spoken text, as it streams.
     Text(String),
@@ -161,6 +161,8 @@ pub enum ReplyEvent {
     Flush,
     /// A silent action's result ("Closed Firefox."), for the history.
     Acted(String),
+    /// The agent (Claude Code) needs user approval before running a tool.
+    Permission(PermissionPrompt),
     Done,
 }
 
@@ -415,12 +417,17 @@ impl Router {
                     prompt: format!("{context}{prompt}"),
                     system: Some(CLAUDE_SYSTEM.into()),
                     model: model.clone(),
+                    permission_prompts: true,
                 };
                 let mut run = cc.run(&req).await?;
                 while let Some(ev) = run.next().await {
                     match ev? {
                         ClaudeEvent::ToolUse { name } => tracing::info!("claude: tool {name}"),
                         ClaudeEvent::Text(_) => {}
+                        ClaudeEvent::Permission(prompt) => {
+                            tracing::info!("claude: permission prompt for {}", prompt.tool_name);
+                            (turn.emit)(ReplyEvent::Permission(prompt));
+                        }
                         ClaudeEvent::Result(r) => {
                             tracing::info!(
                                 "claude: done after {:.1} s, ${:.4}",
@@ -850,7 +857,7 @@ mod tests {
             (doc.title.as_str(), doc.markdown.as_str()),
             ("List", "- a\n- b")
         );
-        assert_eq!(events.last(), Some(&ReplyEvent::Done));
+        assert!(matches!(events.last(), Some(ReplyEvent::Done)));
         // Spoken and shown: no follow-up call.
         assert_eq!(requests.lock().unwrap().len(), 1);
         assert!(requests.lock().unwrap()[0].contains("\"max_tokens\":1000"));
@@ -1123,8 +1130,11 @@ mod tests {
         // The filler is flushed to TTS before the agent runs.
         let filler = events
             .iter()
-            .position(|e| *e == ReplyEvent::Text("On it.".into()));
-        assert_eq!(events.get(filler.unwrap() + 1), Some(&ReplyEvent::Flush));
+            .position(|e| matches!(e, ReplyEvent::Text(t) if t == "On it."));
+        assert!(matches!(
+            events.get(filler.unwrap() + 1),
+            Some(ReplyEvent::Flush)
+        ));
         let shared = shared.lock().unwrap();
         let doc = shared.documents.get("doc-1").unwrap();
         assert_eq!(doc.title, "About X");
@@ -1165,6 +1175,6 @@ mod tests {
         let shared = Mutex::new(Shared::default());
         let events = respond(&router, &shared).await;
         assert!(spoken(&events).contains("couldn't reach"));
-        assert_eq!(events.last(), Some(&ReplyEvent::Done));
+        assert!(matches!(events.last(), Some(ReplyEvent::Done)));
     }
 }

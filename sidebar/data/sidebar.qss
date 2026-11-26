@@ -36,6 +36,24 @@
     padding: 8px;
 }
 
+#PermissionCard {
+    background: palette(base);
+    border: 1px solid #e0b030;
+    border-radius: 8px;
+}
+#PermissionSummary {
+    font-weight: bold;
+}
+#PermissionDetail {
+    background: palette(window);
+    border-radius: 4px;
+    font-family: monospace;
+    padding: 4px;
+}
+#PermissionAllowButton, #PermissionDenyButton {
+    padding: 4px 12px;
+}
+
 /* Live transcript of what you're saying; `is-final` is false while recognizing. */
 #Transcript {
     padding: 4px 2px;

@@ -3,10 +3,12 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QStyle>
 #include <QTextBrowser>
@@ -39,6 +41,38 @@ SidebarWindow::SidebarWindow(DaemonClient *client, QWidget *parent)
     m_document->setObjectName(QStringLiteral("Document"));
     m_document->setOpenExternalLinks(true);
     m_document->setFrameShape(QFrame::NoFrame);
+
+    m_permissionCard = new QFrame(this);
+    m_permissionCard->setObjectName(QStringLiteral("PermissionCard"));
+    m_permissionCard->hide();
+
+    m_permissionSummary = new QLabel(m_permissionCard);
+    m_permissionSummary->setObjectName(QStringLiteral("PermissionSummary"));
+    m_permissionSummary->setWordWrap(true);
+    m_permissionSummary->setTextFormat(Qt::PlainText);
+
+    m_permissionDetail = new QPlainTextEdit(m_permissionCard);
+    m_permissionDetail->setObjectName(QStringLiteral("PermissionDetail"));
+    m_permissionDetail->setReadOnly(true);
+    m_permissionDetail->setMaximumHeight(120);
+    m_permissionDetail->setFrameShape(QFrame::NoFrame);
+
+    m_permissionAllow = new QPushButton(tr("Allow"), m_permissionCard);
+    m_permissionAllow->setObjectName(QStringLiteral("PermissionAllowButton"));
+    m_permissionDeny = new QPushButton(tr("Deny"), m_permissionCard);
+    m_permissionDeny->setObjectName(QStringLiteral("PermissionDenyButton"));
+
+    auto *permButtons = new QHBoxLayout;
+    permButtons->addStretch(1);
+    permButtons->addWidget(m_permissionDeny);
+    permButtons->addWidget(m_permissionAllow);
+
+    auto *permLayout = new QVBoxLayout(m_permissionCard);
+    permLayout->setContentsMargins(10, 10, 10, 10);
+    permLayout->setSpacing(6);
+    permLayout->addWidget(m_permissionSummary);
+    permLayout->addWidget(m_permissionDetail);
+    permLayout->addLayout(permButtons);
 
     m_transcript = new QLabel(this);
     m_transcript->setObjectName(QStringLiteral("Transcript"));
@@ -75,9 +109,16 @@ SidebarWindow::SidebarWindow(DaemonClient *client, QWidget *parent)
     layout->setSpacing(8);
     layout->addLayout(header);
     layout->addWidget(m_document, 1);
+    layout->addWidget(m_permissionCard);
     layout->addWidget(m_transcript);
     layout->addLayout(footer);
 
+    connect(m_permissionAllow, &QPushButton::clicked, this, [this] {
+        m_client->answerPermission(m_client->pendingPermission().id, true);
+    });
+    connect(m_permissionDeny, &QPushButton::clicked, this, [this] {
+        m_client->answerPermission(m_client->pendingPermission().id, false);
+    });
     connect(m_history, &QComboBox::activated, m_client, &DaemonClient::selectDocument);
     connect(m_input, &QLineEdit::returnPressed, this, [this] {
         m_client->ask(m_input->text());
@@ -94,12 +135,14 @@ SidebarWindow::SidebarWindow(DaemonClient *client, QWidget *parent)
     connect(m_client, &DaemonClient::stateChanged, this, &SidebarWindow::updateState);
     connect(m_client, &DaemonClient::documentsChanged, this, &SidebarWindow::updateDocuments);
     connect(m_client, &DaemonClient::currentChanged, this, &SidebarWindow::updateCurrent);
+    connect(m_client, &DaemonClient::permissionChanged, this, &SidebarWindow::updatePermission);
     connect(m_client, &DaemonClient::visibilityRequested, this, &SidebarWindow::handleVisibilityRequest);
     connect(m_client, &DaemonClient::transcript, this, &SidebarWindow::showTranscript);
 
     updateState();
     updateDocuments();
     updateCurrent();
+    updatePermission();
 }
 
 void SidebarWindow::setupLayerShell()
@@ -156,6 +199,18 @@ void SidebarWindow::updateCurrent()
         m_history->setCurrentIndex(m_client->currentIndex());
     }
     m_document->setMarkdown(m_client->currentMarkdown());
+}
+
+void SidebarWindow::updatePermission()
+{
+    const auto &p = m_client->pendingPermission();
+    const bool active = !p.id.isEmpty();
+    m_permissionCard->setVisible(active);
+    if (!active)
+        return;
+    m_permissionSummary->setText(p.summary);
+    m_permissionDetail->setVisible(!p.detail.isEmpty());
+    m_permissionDetail->setPlainText(p.detail);
 }
 
 // Shows what you're saying, live. Assistant replies go to TTS and documents, not here.

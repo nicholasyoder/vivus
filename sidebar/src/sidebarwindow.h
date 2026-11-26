@@ -4,8 +4,10 @@
 
 class DaemonClient;
 class QComboBox;
+class QFrame;
 class QLabel;
 class QLineEdit;
+class QPlainTextEdit;
 class QPushButton;
 class QTextBrowser;
 
@@ -27,6 +29,7 @@ private:
     void updateState();
     void updateDocuments();
     void updateCurrent();
+    void updatePermission();
     void handleVisibilityRequest(const QString &action);
     void showTranscript(const QString &role, const QString &text, bool isFinal);
 
@@ -35,6 +38,11 @@ private:
     QLabel *m_stateLabel;
     QComboBox *m_history;
     QTextBrowser *m_document;
+    QFrame *m_permissionCard;
+    QLabel *m_permissionSummary;
+    QPlainTextEdit *m_permissionDetail;
+    QPushButton *m_permissionAllow;
+    QPushButton *m_permissionDeny;
     QLabel *m_transcript;
     QLineEdit *m_input;
     QPushButton *m_talk;
