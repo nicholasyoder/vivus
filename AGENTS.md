@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Start with [docs/roadmap.md](docs/roadmap.md): it says where the project is and
 what's next. Topic docs in `docs/` hold the design detail
@@ -26,6 +26,6 @@ what's next. Topic docs in `docs/` hold the design detail
 
 ## Git
 
-Claude owns git here: commit and push when it makes sense, without asking.
+The coding agent owns git here: commit and push when it makes sense, without asking.
 Work on `develop`; `master` changes only at releases. Major features go on a
 branch with a PR into `develop` once a remote exists.
